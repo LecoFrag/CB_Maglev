@@ -1,0 +1,4178 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HELIX DYNAMICS — SISTEMA DE GERENCIAMENTO v4.1.7</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #04090f;
+            --bg-panel: #060e17;
+            --bg-surface: #081522;
+            --border-dim: #0a3a55;
+            --border-bright: #0d5070;
+            --cyan-primary: #00cfff;
+            --cyan-glow: #00e5ff;
+            --green-ok: #00ff88;
+            --amber-warn: #ffaa00;
+            --red-danger: #ff4444;
+            --text-primary: #c8e8f0;
+            --text-muted: #4a8fa8;
+            --text-dim: #2a5570;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-deep);
+            color: var(--text-primary);
+            font-family: 'Share Tech Mono', monospace;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* CRT Scanline Overlay & Screen Glitch Simulation */
+        body::before {
+            content: " ";
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+                linear-gradient(90deg, rgba(255, 0, 0, 0.04), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.04));
+            z-index: 9999;
+            background-size: 100% 3px, 6px 100%;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        /* Subtle static noise overlay */
+        .noise-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            opacity: 0.03;
+            z-index: 9990;
+            pointer-events: none;
+            mix-blend-mode: screen;
+        }
+
+        /* Screen flicker keyframes */
+        @keyframes crt-flicker {
+            0% {
+                opacity: 0.985;
+            }
+
+            50% {
+                opacity: 0.995;
+            }
+
+            100% {
+                opacity: 0.985;
+            }
+        }
+
+        body {
+            animation: crt-flicker 0.15s infinite;
+        }
+
+        /* System Header */
+        .system-header {
+            background-color: var(--bg-panel);
+            border-bottom: 1px solid var(--border-dim);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 50px;
+            z-index: 10;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+        }
+
+        .header-left {
+            font-size: 14px;
+            letter-spacing: 2px;
+            color: var(--cyan-primary);
+            font-weight: bold;
+        }
+
+        .header-center {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+        }
+
+        .pulse-indicator {
+            color: var(--green-ok);
+            animation: blink 1s steps(2, start) infinite;
+            text-shadow: 0 0 5px var(--green-ok);
+        }
+
+        @keyframes blink {
+            to {
+                visibility: hidden;
+            }
+        }
+
+        .net-status {
+            color: var(--text-primary);
+            letter-spacing: 1px;
+        }
+
+        .header-right {
+            font-size: 15px;
+            color: var(--cyan-primary);
+            letter-spacing: 2px;
+            font-weight: bold;
+        }
+
+        /* Main Workspace */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            padding: 20px;
+            gap: 20px;
+            max-width: 1400px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* Blueprint section wrapping image & SVG */
+        .blueprint-section {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+        }
+
+        .blueprint-container {
+            position: relative;
+            width: 100%;
+            max-width: 1200px;
+            aspect-ratio: 2752 / 1536;
+            background: #020509;
+            border: 1px solid var(--border-bright);
+            box-shadow: 0 0 25px rgba(0, 207, 255, 0.15);
+            overflow: hidden;
+        }
+
+        .blueprint-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            opacity: 0.8;
+            filter: contrast(1.1) brightness(0.9);
+            transition: filter 0.5s ease;
+        }
+
+        .blueprint-image.blurred {
+            filter: blur(25px) contrast(1.1) brightness(0.9) !important;
+        }
+
+        /* SVG Overlays */
+        .blueprint-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+        }
+
+        /* Scanline motion */
+        .scanline-anim {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(to bottom,
+                    rgba(0, 207, 255, 0) 0%,
+                    rgba(0, 207, 255, 0.6) 50%,
+                    rgba(0, 207, 255, 0) 100%);
+            box-shadow: 0 0 12px rgba(0, 207, 255, 0.4);
+            pointer-events: none;
+            z-index: 6;
+            animation: scanline-move 5s linear infinite;
+        }
+
+        @keyframes scanline-move {
+            0% {
+                transform: translateY(-10px);
+            }
+
+            100% {
+                transform: translateY(1546px);
+            }
+
+            /* covers view height of 1536px */
+        }
+
+        /* SVG Compartments and Doors styles */
+        .comp-rect {
+            stroke: rgba(0, 200, 255, 0.4);
+            stroke-width: 1.5;
+            transition: all 0.2s ease;
+            cursor: crosshair;
+            pointer-events: all;
+        }
+
+        .comp-rect:hover {
+            fill: rgba(0, 200, 255, 0.08);
+            stroke: var(--cyan-glow);
+            stroke-width: 2.0;
+        }
+
+        .comp-rect.selected {
+            fill: rgba(0, 200, 255, 0.15) !important;
+            stroke: var(--cyan-glow) !important;
+            stroke-width: 2.5 !important;
+        }
+
+        .tech-corners {
+            stroke: var(--cyan-primary);
+            stroke-width: 4;
+            fill: none;
+            pointer-events: none;
+        }
+
+        .label-bg {
+            fill: rgba(5, 13, 20, 0.85);
+            stroke: var(--border-dim);
+            stroke-width: 1;
+        }
+
+        .label-text {
+            fill: var(--cyan-primary);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 20px;
+            letter-spacing: 2px;
+            font-weight: bold;
+            pointer-events: none;
+        }
+
+        .door-rect {
+            stroke-width: 3.5;
+            transition: all 0.15s ease;
+        }
+
+        .door-group:hover .door-rect {
+            filter: drop-shadow(0 0 4px var(--cyan-primary));
+        }
+
+        .door-indicator {
+            transition: fill 0.2s ease;
+        }
+
+        /* Lock screen graphics on SVG */
+        .lock-indicator {
+            fill: none;
+            stroke: var(--amber-warn);
+            stroke-width: 6;
+            animation: warning-flicker 2s infinite ease-in-out;
+            transition: stroke 0.25s ease, filter 0.25s ease;
+        }
+
+        .lock-text {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 60px;
+            font-weight: bold;
+            fill: var(--amber-warn);
+            text-shadow: 0 0 10px rgba(255, 170, 0, 0.6);
+            letter-spacing: 4px;
+            animation: warning-flicker 2s infinite ease-in-out;
+            transition: fill 0.25s ease, text-shadow 0.25s ease;
+        }
+
+        #global-locked-gfx:hover .lock-indicator {
+            stroke: var(--cyan-glow);
+            filter: drop-shadow(0 0 15px var(--cyan-glow));
+        }
+
+        #global-locked-gfx:hover .lock-text {
+            fill: var(--cyan-glow);
+            text-shadow: 0 0 15px var(--cyan-glow);
+        }
+
+        #global-locked-gfx:hover circle {
+            fill: var(--cyan-glow) !important;
+            transition: fill 0.25s ease;
+        }
+
+        #global-locked-gfx:hover line {
+            stroke: var(--cyan-glow) !important;
+            transition: stroke 0.25s ease;
+        }
+
+        @keyframes warning-flicker {
+
+            0%,
+            100% {
+                opacity: 0.9;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
+        }
+
+        /* Door flash visual confirmation effect */
+        @keyframes door-flash {
+            0% {
+                opacity: 0.2;
+            }
+
+            50% {
+                opacity: 1.0;
+            }
+
+            100% {
+                opacity: 0.2;
+            }
+        }
+
+        .door-flash-overlay {
+            animation: door-flash 0.15s ease-out 2;
+            fill: white;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* Bottom panels layout */
+        .panels-section {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+            width: 100%;
+        }
+
+        @media (min-width: 900px) {
+            .panels-section {
+                grid-template-columns: 3fr 2fr;
+            }
+        }
+
+        /* HUD Panels Styling with Cyberpunk details */
+        .hud-panel {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-dim);
+            border-radius: 4px;
+            padding: 20px;
+            position: relative;
+            box-shadow: inset 0 0 15px rgba(10, 58, 85, 0.3), 0 4px 15px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s ease;
+        }
+
+        .hud-panel:hover {
+            border-color: var(--border-bright);
+            box-shadow: inset 0 0 20px rgba(0, 207, 255, 0.15), 0 4px 20px rgba(0, 207, 255, 0.05);
+        }
+
+        /* Corner Tech notches */
+        .hud-panel::before {
+            content: "";
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            width: 15px;
+            height: 15px;
+            border-top: 3px solid var(--cyan-primary);
+            border-left: 3px solid var(--cyan-primary);
+            pointer-events: none;
+        }
+
+        .hud-panel::after {
+            content: "";
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 15px;
+            height: 15px;
+            border-bottom: 3px solid var(--cyan-primary);
+            border-right: 3px solid var(--cyan-primary);
+            pointer-events: none;
+        }
+
+        .panel-header {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--cyan-primary);
+            border-bottom: 1px solid var(--border-bright);
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Info panel inside layouts */
+        .empty-panel-prompt {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            flex: 1;
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--text-dim);
+            border: 1px dashed rgba(10, 58, 85, 0.3);
+            border-radius: 4px;
+        }
+
+        .prompt-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 16px;
+            letter-spacing: 3px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        .prompt-subtitle {
+            font-size: 12px;
+            letter-spacing: 1px;
+        }
+
+        .compartment-info {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            animation: fadeSlideIn 0.25s ease-out;
+        }
+
+        @keyframes fadeSlideIn {
+            0% {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+
+            100% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .comp-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 20px;
+            font-weight: 900;
+            color: var(--cyan-primary);
+            letter-spacing: 3px;
+            text-shadow: 0 0 10px rgba(0, 207, 255, 0.4);
+            margin: 0;
+        }
+
+        .comp-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+
+        @media(min-width: 500px) {
+            .comp-grid {
+                grid-template-columns: 120px 1fr;
+            }
+        }
+
+        .comp-label {
+            color: var(--text-muted);
+            font-weight: bold;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid rgba(10, 58, 85, 0.2);
+            padding: 4px 0;
+            letter-spacing: 1px;
+        }
+
+        .comp-value {
+            color: var(--text-primary);
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            border-bottom: 1px solid rgba(10, 58, 85, 0.2);
+            padding: 4px 0;
+        }
+
+        .narrative-note {
+            font-size: 12px;
+            line-height: 1.5;
+            color: var(--text-muted);
+            border-left: 2px solid var(--border-bright);
+            padding-left: 10px;
+            margin: 10px 0;
+            background: rgba(10, 58, 85, 0.1);
+            padding: 8px 10px;
+            border-radius: 0 4px 4px 0;
+        }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 1px 6px;
+            font-size: 10px;
+            font-weight: bold;
+            border-radius: 2px;
+            text-transform: uppercase;
+            border: 1px solid currentColor;
+            background: rgba(0, 0, 0, 0.25);
+        }
+
+        .badge.online {
+            color: var(--green-ok);
+            box-shadow: 0 0 4px rgba(0, 255, 136, 0.2);
+        }
+
+        .badge.offline {
+            color: var(--red-danger);
+            box-shadow: 0 0 4px rgba(255, 68, 68, 0.2);
+        }
+
+        .badge.warn {
+            color: var(--amber-warn);
+            box-shadow: 0 0 4px rgba(255, 170, 0, 0.2);
+        }
+
+        .badge.secure {
+            color: var(--cyan-primary);
+            box-shadow: 0 0 4px rgba(0, 207, 255, 0.2);
+        }
+
+        /* Door controls panel */
+        .door-controls-box {
+            border: 1px solid var(--border-dim);
+            background: rgba(4, 9, 15, 0.6);
+            border-radius: 4px;
+            padding: 12px;
+            margin-top: 5px;
+        }
+
+        .door-controls-title {
+            font-size: 11px;
+            color: var(--text-muted);
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .door-control-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px dashed rgba(10, 58, 85, 0.3);
+        }
+
+        .door-control-row:last-child {
+            border-bottom: none;
+        }
+
+        .door-control-name {
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .door-control-status {
+            font-size: 11px;
+        }
+
+        .btn-toggle-door {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 4px 10px;
+            border-radius: 2px;
+            cursor: pointer;
+            background: transparent;
+            text-transform: uppercase;
+            transition: all 0.2s ease;
+        }
+
+        .btn-toggle-door.locked {
+            border: 1px solid var(--red-danger);
+            color: var(--red-danger);
+        }
+
+        .btn-toggle-door.locked:hover {
+            background: rgba(255, 68, 68, 0.15);
+            box-shadow: 0 0 8px rgba(255, 68, 68, 0.3);
+        }
+
+        .btn-toggle-door.unlocked {
+            border: 1px solid var(--green-ok);
+            color: var(--green-ok);
+        }
+
+        .btn-toggle-door.unlocked:hover {
+            background: rgba(0, 255, 136, 0.15);
+            box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+        }
+
+        /* Log Panel */
+        .logs-container {
+            flex: 1;
+            min-height: 180px;
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid rgba(10, 58, 85, 0.4);
+            background-color: rgba(4, 9, 15, 0.8);
+            border-radius: 4px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 12px;
+            scroll-behavior: smooth;
+        }
+
+        /* Custom Scrollbar for Netrunner Terminal UI */
+        .logs-container::-webkit-scrollbar,
+        .panel-hack-console::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .logs-container::-webkit-scrollbar-track,
+        .panel-hack-console::-webkit-scrollbar-track {
+            background: rgba(4, 9, 15, 0.8);
+        }
+
+        .logs-container::-webkit-scrollbar-thumb,
+        .panel-hack-console::-webkit-scrollbar-thumb {
+            background: var(--border-dim);
+            border-radius: 2px;
+        }
+
+        .logs-container::-webkit-scrollbar-thumb:hover,
+        .panel-hack-console::-webkit-scrollbar-thumb:hover {
+            background: var(--border-bright);
+        }
+
+        .log-entry {
+            line-height: 1.4;
+            display: flex;
+            gap: 8px;
+            animation: log-appear 0.15s ease-out;
+        }
+
+        @keyframes log-appear {
+            0% {
+                opacity: 0;
+                transform: translateX(-4px);
+            }
+
+            100% {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .log-time {
+            color: var(--text-dim);
+            flex-shrink: 0;
+        }
+
+        .log-msg {
+            word-break: break-all;
+        }
+
+        .log-msg.neutro {
+            color: var(--cyan-primary);
+        }
+
+        .log-msg.acao {
+            color: var(--green-ok);
+        }
+
+        .log-msg.alerta {
+            color: var(--amber-warn);
+        }
+
+        .log-msg.erro {
+            color: var(--red-danger);
+        }
+
+        /* Decryption minigame styling */
+        .breach-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            animation: fadeSlideIn 0.25s ease-out;
+        }
+
+        .breach-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-dim);
+            padding-bottom: 6px;
+        }
+
+        .breach-title {
+            color: var(--amber-warn);
+            font-size: 13px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .breach-timer {
+            color: var(--red-danger);
+            font-size: 14px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            font-family: 'Orbitron', sans-serif;
+            animation: warning-flicker 1.5s infinite steps(2);
+        }
+
+        .breach-instructions {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.4;
+            margin: 0;
+        }
+
+        .breach-goals-box {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px dashed var(--border-dim);
+            border-radius: 4px;
+            padding: 8px 12px;
+        }
+
+        .breach-goal-section,
+        .breach-buffer-section {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .breach-goal-label,
+        .breach-buffer-label {
+            font-size: 9px;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+            font-weight: bold;
+        }
+
+        .sequence-display {
+            display: flex;
+            gap: 6px;
+        }
+
+        .seq-node {
+            border: 1px solid var(--border-dim);
+            padding: 2px 6px;
+            font-size: 13px;
+            border-radius: 2px;
+            color: var(--text-muted);
+            background: rgba(10, 58, 85, 0.1);
+        }
+
+        .seq-node.active-check {
+            border-color: var(--cyan-primary);
+            color: var(--cyan-primary);
+            box-shadow: 0 0 4px rgba(0, 207, 255, 0.1);
+        }
+
+        .seq-node.matched {
+            border-color: var(--green-ok);
+            color: var(--green-ok) !important;
+            background: rgba(0, 255, 136, 0.1);
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.4);
+        }
+
+        .buffer-display {
+            display: flex;
+            gap: 6px;
+        }
+
+        .buf-node {
+            border: 1px solid var(--border-bright);
+            background: rgba(10, 58, 85, 0.2);
+            width: 26px;
+            height: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: bold;
+            border-radius: 2px;
+            color: var(--cyan-primary);
+        }
+
+        .buf-node.empty {
+            border-color: var(--border-dim);
+            color: var(--text-dim);
+        }
+
+        .breach-board-layout {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        @media (min-width: 600px) {
+            .breach-board-layout {
+                flex-direction: row;
+            }
+        }
+
+        .matrix-container {
+            flex: 1;
+        }
+
+        .matrix-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 6px;
+            border: 1px solid var(--border-bright);
+            padding: 8px;
+            background: rgba(4, 9, 15, 0.9);
+            border-radius: 4px;
+        }
+
+        .matrix-cell {
+            aspect-ratio: 1;
+            border: 1px solid var(--border-dim);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            background: rgba(10, 58, 85, 0.05);
+            font-weight: bold;
+        }
+
+        .matrix-cell.highlight-row,
+        .matrix-cell.highlight-col {
+            border-color: rgba(0, 207, 255, 0.25);
+            background: rgba(0, 207, 255, 0.04);
+        }
+
+        .matrix-cell.playable {
+            border-color: var(--cyan-primary);
+            color: var(--cyan-primary);
+            text-shadow: 0 0 6px rgba(0, 207, 255, 0.5);
+            background: rgba(0, 207, 255, 0.08);
+        }
+
+        .matrix-cell.playable:hover {
+            border-color: var(--cyan-glow);
+            color: var(--bg-deep);
+            background: var(--cyan-glow);
+            box-shadow: 0 0 10px var(--cyan-glow);
+        }
+
+        .matrix-cell.used {
+            opacity: 0.15 !important;
+            cursor: not-allowed !important;
+            border-color: transparent !important;
+            background: transparent !important;
+            color: var(--text-dim) !important;
+        }
+
+        .matrix-cell.selected-buffer {
+            background: var(--cyan-primary);
+            color: var(--bg-deep);
+            border-color: var(--cyan-primary);
+        }
+
+        .breach-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .btn-breach {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 12px;
+            font-weight: bold;
+            padding: 10px 15px;
+            border-radius: 2px;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.2s ease;
+            text-align: center;
+            border: 1px solid var(--border-bright);
+            background: transparent;
+            color: var(--text-primary);
+        }
+
+        .btn-breach:hover {
+            border-color: var(--cyan-primary);
+            background: rgba(0, 207, 255, 0.1);
+            box-shadow: 0 0 8px rgba(0, 207, 255, 0.2);
+        }
+
+        .btn-breach.danger {
+            border-color: var(--red-danger);
+            color: var(--red-danger);
+        }
+
+        .btn-breach.danger:hover {
+            background: rgba(255, 68, 68, 0.1);
+            box-shadow: 0 0 8px rgba(255, 68, 68, 0.2);
+        }
+
+        .btn-breach.start-hack {
+            border-color: var(--amber-warn);
+            color: var(--amber-warn);
+            font-family: 'Orbitron', sans-serif;
+            font-weight: bold;
+            font-size: 13px;
+            margin-top: 10px;
+            padding: 14px;
+            letter-spacing: 2px;
+            box-shadow: 0 0 8px rgba(255, 170, 0, 0.1);
+        }
+
+        .btn-breach.start-hack:hover {
+            background: rgba(255, 170, 0, 0.12);
+            border-color: var(--amber-warn);
+            box-shadow: 0 0 15px rgba(255, 170, 0, 0.3);
+            text-shadow: 0 0 6px var(--amber-warn);
+        }
+
+        /* Breach Failure / Success displays */
+        .breach-outcome {
+            text-align: center;
+            padding: 25px;
+            border-radius: 4px;
+            border: 1px solid currentColor;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            animation: zoomIn 0.2s ease-out;
+        }
+
+        @keyframes zoomIn {
+            from {
+                transform: scale(0.95);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .outcome-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .outcome-subtitle {
+            font-size: 12px;
+            margin-bottom: 5px;
+            line-height: 1.5;
+        }
+
+        .breach-outcome.success {
+            color: var(--green-ok);
+            border-color: var(--green-ok);
+            background: rgba(0, 255, 136, 0.05);
+            box-shadow: inset 0 0 15px rgba(0, 255, 136, 0.1);
+        }
+
+        .breach-outcome.failure {
+            color: var(--red-danger);
+            border-color: var(--red-danger);
+            background: rgba(255, 68, 68, 0.05);
+            box-shadow: inset 0 0 15px rgba(255, 68, 68, 0.1);
+        }
+
+        /* Tooltip style */
+        .tech-tooltip {
+            position: absolute;
+            background: rgba(2, 6, 11, 0.95);
+            border: 1px solid var(--cyan-primary);
+            color: var(--text-primary);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 11px;
+            padding: 6px 10px;
+            pointer-events: none;
+            z-index: 1000;
+            border-radius: 2px;
+            box-shadow: 0 0 10px rgba(0, 207, 255, 0.3);
+            display: none;
+            letter-spacing: 1px;
+            transform: translate(-50%, -100%);
+            margin-top: -12px;
+        }
+
+        .tech-tooltip::after {
+            content: "";
+            position: absolute;
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 5px 5px 0;
+            border-style: solid;
+            border-color: var(--cyan-primary) transparent;
+            display: block;
+            width: 0;
+        }
+
+        /* Boot Loading Screen Overlay */
+        .boot-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #020509;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+        }
+
+        .boot-screen.fade-out {
+            opacity: 0;
+            transform: scale(1.02);
+            pointer-events: none;
+        }
+
+        .boot-content {
+            max-width: 600px;
+            width: 100%;
+            border: 1px solid var(--border-dim);
+            background-color: var(--bg-panel);
+            padding: 30px;
+            border-radius: 4px;
+            box-shadow: 0 0 30px rgba(0, 207, 255, 0.1);
+            position: relative;
+        }
+
+        .boot-content::before {
+            content: "";
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            width: 15px;
+            height: 15px;
+            border-top: 3px solid var(--cyan-primary);
+            border-left: 3px solid var(--cyan-primary);
+        }
+
+        .boot-content::after {
+            content: "";
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 15px;
+            height: 15px;
+            border-bottom: 3px solid var(--cyan-primary);
+            border-right: 3px solid var(--cyan-primary);
+        }
+
+        .boot-logo {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 20px;
+            font-weight: bold;
+            color: var(--cyan-primary);
+            text-align: center;
+            margin-bottom: 20px;
+            letter-spacing: 5px;
+            text-shadow: 0 0 10px rgba(0, 207, 255, 0.4);
+        }
+
+        .boot-terminal {
+            height: 180px;
+            border: 1px solid rgba(10, 58, 85, 0.4);
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 2px;
+            padding: 12px;
+            font-size: 11px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-bottom: 20px;
+            font-family: 'Share Tech Mono', monospace;
+            color: var(--text-muted);
+        }
+
+        .boot-terminal-line {
+            display: flex;
+            gap: 10px;
+        }
+
+        .boot-terminal-line.success {
+            color: var(--green-ok);
+        }
+
+        .boot-progress-container {
+            height: 4px;
+            background: rgba(10, 58, 85, 0.3);
+            width: 100%;
+            margin-bottom: 10px;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .boot-progress-bar {
+            height: 100%;
+            width: 0%;
+            background: var(--cyan-primary);
+            box-shadow: 0 0 8px var(--cyan-primary);
+            transition: width 0.1s linear;
+        }
+
+        .boot-status {
+            font-size: 11px;
+            text-align: center;
+            color: var(--text-dim);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+        }
+
+        .jack-in-btn {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 13px;
+            font-weight: bold;
+            color: var(--green-ok);
+            border: 1px solid var(--green-ok);
+            background: rgba(0, 255, 136, 0.05);
+            width: 100%;
+            padding: 15px;
+            cursor: pointer;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.15);
+            animation: pulse-glow 2s infinite ease-in-out;
+        }
+
+        @keyframes pulse-glow {
+
+            0%,
+            100% {
+                box-shadow: 0 0 10px rgba(0, 255, 136, 0.15);
+                border-color: rgba(0, 255, 136, 0.8);
+            }
+
+            50% {
+                box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+                border-color: var(--green-ok);
+                background: rgba(0, 255, 136, 0.12);
+            }
+        }
+
+        .jack-in-btn:hover {
+            background: var(--green-ok) !important;
+            color: var(--bg-deep) !important;
+            box-shadow: 0 0 25px var(--green-ok) !important;
+            text-shadow: none !important;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Calibration Mode CSS */
+        .calibration-panel {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            width: 340px;
+            background-color: rgba(6, 14, 23, 0.95);
+            border: 2px solid var(--amber-warn);
+            border-radius: 4px;
+            padding: 15px;
+            z-index: 10005;
+            box-shadow: 0 0 20px rgba(255, 170, 0, 0.25), inset 0 0 15px rgba(255, 170, 0, 0.1);
+            font-family: 'Share Tech Mono', monospace;
+            color: var(--text-primary);
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+
+        .calibration-panel::before {
+            content: "";
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            width: 15px;
+            height: 15px;
+            border-top: 3px solid var(--amber-warn);
+            border-left: 3px solid var(--amber-warn);
+            pointer-events: none;
+        }
+
+        .cal-header {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--amber-warn);
+            border-bottom: 1px solid var(--amber-warn);
+            padding-bottom: 6px;
+            margin-bottom: 12px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .cal-section {
+            margin-bottom: 12px;
+            border-bottom: 1px dashed rgba(255, 170, 0, 0.2);
+            padding-bottom: 10px;
+        }
+
+        .cal-section:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .cal-section-title {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: bold;
+            margin-bottom: 6px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .cal-select {
+            width: 100%;
+            background: #020509;
+            border: 1px solid var(--border-bright);
+            color: var(--text-primary);
+            font-family: 'Share Tech Mono', monospace;
+            padding: 5px;
+            font-size: 12px;
+            border-radius: 2px;
+            margin-bottom: 10px;
+        }
+
+        .cal-select:focus {
+            outline: none;
+            border-color: var(--amber-warn);
+        }
+
+        .cal-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+            align-items: center;
+        }
+
+        .cal-field {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+
+        .cal-field label {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-bottom: 2px;
+        }
+
+        .cal-input-container {
+            display: flex;
+            align-items: center;
+            border: 1px solid var(--border-bright);
+            background: #020509;
+            border-radius: 2px;
+        }
+
+        .cal-input-container input {
+            width: 100%;
+            border: none;
+            background: transparent;
+            color: var(--text-primary);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 12px;
+            padding: 4px;
+            text-align: center;
+        }
+
+        .cal-input-container input:focus {
+            outline: none;
+        }
+
+        .cal-nudge-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px 6px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .cal-nudge-btn:hover {
+            color: var(--amber-warn);
+            background: rgba(255, 170, 0, 0.1);
+        }
+
+        .cal-btn {
+            background: transparent;
+            border: 1px solid var(--amber-warn);
+            color: var(--amber-warn);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 12px;
+            font-weight: bold;
+            padding: 6px 12px;
+            cursor: pointer;
+            width: 100%;
+            border-radius: 2px;
+            text-transform: uppercase;
+            transition: all 0.2s ease;
+        }
+
+        .cal-btn:hover {
+            background: rgba(255, 170, 0, 0.15);
+            box-shadow: 0 0 8px rgba(255, 170, 0, 0.3);
+        }
+
+        .cal-textarea {
+            width: 100%;
+            height: 140px;
+            background: #020509;
+            border: 1px solid var(--border-bright);
+            color: var(--green-ok);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 11px;
+            padding: 6px;
+            resize: vertical;
+            border-radius: 2px;
+        }
+
+        .cal-textarea:focus {
+            outline: none;
+            border-color: var(--amber-warn);
+        }
+
+        .cal-instructions {
+            font-size: 10px;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        /* SVG edit elements */
+        .comp-rect.cal-selected {
+            stroke: var(--amber-warn) !important;
+            stroke-width: 2.5 !important;
+            stroke-dasharray: 6 4;
+            animation: cal-selected-dash 20s linear infinite;
+        }
+
+        @keyframes cal-selected-dash {
+            to {
+                stroke-dashoffset: -1000;
+            }
+        }
+
+        .door-rect.cal-selected {
+            stroke: var(--amber-warn) !important;
+            stroke-width: 3.5 !important;
+        }
+
+        .cal-resize-handle {
+            fill: var(--red-danger);
+            stroke: #fff;
+            stroke-width: 1;
+            cursor: nwse-resize;
+            pointer-events: all;
+        }
+
+        .cal-resize-handle:hover {
+            fill: var(--amber-warn);
+            r: 8;
+        }
+
+        .cal-drag-active {
+            cursor: move !important;
+        }
+
+        .cal-resize-active {
+            cursor: nwse-resize !important;
+        }
+
+        /* ==========================================================================
+           8. CORE SCREEN SYSTEMS (MENU & TELEMETRY PANELS)
+           ========================================================================== */
+        .screen-container {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            width: 100%;
+        }
+
+        .screen-container.hidden {
+            display: none !important;
+        }
+
+        /* Menu / Landing Screen */
+        .menu-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            padding: 40px 20px;
+            max-width: 1000px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .menu-title-block {
+            text-align: center;
+            margin-bottom: 50px;
+            border-bottom: 2px solid var(--border-dim);
+            padding-bottom: 25px;
+            width: 100%;
+            position: relative;
+        }
+
+        .menu-title-block::after {
+            content: "";
+            position: absolute;
+            bottom: -2px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 150px;
+            height: 2px;
+            background: var(--cyan-primary);
+            box-shadow: 0 0 10px var(--cyan-glow);
+        }
+
+        .menu-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 32px;
+            font-weight: 900;
+            letter-spacing: 4px;
+            color: var(--text-primary);
+            margin: 0 0 10px 0;
+            text-shadow: 0 0 15px rgba(0, 207, 255, 0.4);
+        }
+
+        .menu-subtitle {
+            font-size: 14px;
+            letter-spacing: 3px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .menu-options-container {
+            display: flex;
+            gap: 30px;
+            width: 100%;
+            justify-content: center;
+            perspective: 1000px;
+        }
+
+        .menu-card {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-dim);
+            border-radius: 4px;
+            padding: 40px 30px;
+            flex: 1;
+            max-width: 420px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+        }
+
+        .menu-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg,
+                    transparent,
+                    rgba(0, 207, 255, 0.05),
+                    transparent);
+            transition: 0.5s;
+        }
+
+        .menu-card:hover::before {
+            left: 100%;
+        }
+
+        .menu-card:hover {
+            border-color: var(--cyan-primary);
+            transform: translateY(-8px);
+            box-shadow: 0 15px 35px rgba(0, 207, 255, 0.15), 0 0 15px rgba(0, 207, 255, 0.1);
+        }
+
+        .menu-card-icon {
+            font-size: 48px;
+            color: var(--cyan-primary);
+            margin-bottom: 25px;
+            text-shadow: 0 0 10px rgba(0, 207, 255, 0.5);
+            transition: transform 0.3s ease;
+        }
+
+        .menu-card:hover .menu-card-icon {
+            transform: scale(1.1);
+        }
+
+        .menu-card-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            color: var(--text-primary);
+            margin: 0 0 15px 0;
+            text-transform: uppercase;
+        }
+
+        .menu-card-desc {
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        /* Telemetry Dashboard */
+        .telemetry-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            padding: 25px;
+            max-width: 1400px;
+            width: 100%;
+            margin: 0 auto;
+            flex: 1;
+        }
+
+        .telemetry-hud-panel {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-dim);
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .telemetry-hud-panel.flex-center {
+            align-items: center;
+            justify-content: center;
+        }
+
+        .panel-body {
+            padding: 25px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        /* Time Block */
+        .time-body {
+            gap: 20px;
+        }
+
+        .time-block {
+            border-left: 3px solid var(--border-dim);
+            padding-left: 20px;
+        }
+
+        .time-label {
+            font-size: 12px;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            margin-bottom: 5px;
+        }
+
+        .time-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 40px;
+            font-weight: 900;
+            letter-spacing: 3px;
+            text-shadow: 0 0 10px currentColor;
+        }
+
+        .uptime-color {
+            color: var(--green-ok);
+        }
+
+        .downtime-color {
+            color: var(--red-danger);
+            animation: text-pulse 2s infinite alternate;
+        }
+
+        @keyframes text-pulse {
+            from {
+                text-shadow: 0 0 5px var(--red-danger);
+            }
+
+            to {
+                text-shadow: 0 0 15px var(--red-danger), 0 0 25px var(--red-danger);
+            }
+        }
+
+        .time-subtext {
+            font-size: 11px;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            margin-top: 5px;
+            text-transform: uppercase;
+        }
+
+        .time-subtext.text-warning {
+            color: var(--amber-warn);
+        }
+
+        /* Integrity Rows */
+        .integrity-body {
+            gap: 15px;
+            justify-content: flex-start;
+        }
+
+        .integrity-row {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(10, 58, 85, 0.3);
+        }
+
+        .integrity-row:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .integrity-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .integrity-name {
+            color: var(--text-primary);
+            letter-spacing: 1px;
+        }
+
+        .integrity-status {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 12px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .status-dot-wrapper {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .status-dot-wrapper svg {
+            display: block;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 20px;
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-dim);
+            border-radius: 2px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #005f44, var(--green-ok));
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 10px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 11px;
+            font-weight: bold;
+            color: #000;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+            transition: width 0.5s ease;
+        }
+
+        .progress-bar-fill.warning {
+            background: linear-gradient(90deg, #b35f00, var(--amber-warn));
+            box-shadow: 0 0 10px rgba(255, 170, 0, 0.5);
+        }
+
+        /* Sonar Section */
+        .sonar-body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .sonar-subtext {
+            font-size: 11px;
+            color: var(--green-ok);
+            letter-spacing: 2px;
+            animation: blink 2s infinite;
+        }
+
+        /* Speed Section */
+        .speed-body {
+            gap: 10px;
+            text-align: center;
+        }
+
+        .speed-label {
+            font-size: 12px;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+        }
+
+        .speed-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 48px;
+            font-weight: 900;
+            color: var(--cyan-primary);
+            letter-spacing: 2px;
+            text-shadow: 0 0 15px rgba(0, 207, 255, 0.6);
+        }
+
+        .speed-subtext {
+            font-size: 11px;
+            color: var(--text-dim);
+            letter-spacing: 1px;
+        }
+
+        .speed-bar-container {
+            width: 100%;
+            height: 8px;
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-dim);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .speed-bar-fill {
+            height: 100%;
+            background: var(--cyan-primary);
+            box-shadow: 0 0 8px var(--cyan-glow);
+            transition: width 0.3s ease;
+        }
+
+        /* Integrity Grid & Schematic Styles */
+        .integrity-container {
+            display: grid;
+            grid-template-columns: 140px 1fr;
+            gap: 20px;
+            align-items: center;
+            width: 100%;
+        }
+
+        .integrity-schematic {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border-dim);
+            border-radius: 4px;
+            padding: 10px;
+            min-height: 225px;
+        }
+
+        .integrity-bars {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            flex: 1;
+        }
+
+        /* SVG Schematic Glow Animations */
+        .sub-core-glow {
+            animation: sub-core-pulse 1.5s infinite ease-in-out;
+        }
+
+        @keyframes sub-core-pulse {
+            0% {
+                fill: rgba(255, 170, 0, 0.15);
+                stroke: rgba(255, 170, 0, 0.7);
+                filter: drop-shadow(0 0 2px rgba(255, 170, 0, 0.4));
+            }
+            50% {
+                fill: rgba(255, 170, 0, 0.45);
+                stroke: rgba(255, 170, 0, 1);
+                filter: drop-shadow(0 0 8px rgba(255, 170, 0, 0.8));
+            }
+            100% {
+                fill: rgba(255, 170, 0, 0.15);
+                stroke: rgba(255, 170, 0, 0.7);
+                filter: drop-shadow(0 0 2px rgba(255, 170, 0, 0.4));
+            }
+        }
+
+        .mag-coil-pulse-1 {
+            animation: mag-coil-pulse 1.8s infinite ease-in-out;
+            animation-delay: 0s;
+        }
+
+        .mag-coil-pulse-2 {
+            animation: mag-coil-pulse 1.8s infinite ease-in-out;
+            animation-delay: 0.3s;
+        }
+
+        .mag-coil-pulse-3 {
+            animation: mag-coil-pulse 1.8s infinite ease-in-out;
+            animation-delay: 0.6s;
+        }
+
+        @keyframes mag-coil-pulse {
+            0% {
+                fill: rgba(0, 255, 204, 0.1);
+                stroke: rgba(0, 255, 204, 0.6);
+                filter: drop-shadow(0 0 1px rgba(0, 255, 204, 0.3));
+            }
+            50% {
+                fill: rgba(0, 255, 204, 0.35);
+                stroke: rgba(0, 255, 204, 1);
+                filter: drop-shadow(0 0 6px rgba(0, 255, 204, 0.8));
+            }
+            100% {
+                fill: rgba(0, 255, 204, 0.1);
+                stroke: rgba(0, 255, 204, 0.6);
+                filter: drop-shadow(0 0 1px rgba(0, 255, 204, 0.3));
+            }
+        }
+
+        /* Override button & Section */
+        .override-section {
+            padding: 0 25px 25px 25px;
+            display: flex;
+            justify-content: center;
+            width: 100%;
+        }
+
+        .btn-override {
+            width: 100%;
+            max-width: 600px;
+            background: rgba(255, 68, 68, 0.1);
+            border: 1.5px solid var(--red-danger);
+            color: var(--red-danger);
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 700;
+            font-size: 15px;
+            letter-spacing: 2px;
+            padding: 18px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-transform: uppercase;
+            box-shadow: 0 0 15px rgba(255, 68, 68, 0.15);
+            animation: override-pulse 2s infinite;
+            transition: all 0.3s ease;
+        }
+
+        .btn-override:hover {
+            background: var(--red-danger);
+            color: #000;
+            box-shadow: 0 0 25px rgba(255, 68, 68, 0.6);
+            transform: scale(1.02);
+        }
+
+        @keyframes override-pulse {
+            0% {
+                box-shadow: 0 0 10px rgba(255, 68, 68, 0.2);
+                border-color: rgba(255, 68, 68, 0.6);
+            }
+
+            50% {
+                box-shadow: 0 0 25px rgba(255, 68, 68, 0.5);
+                border-color: rgba(255, 68, 68, 1);
+            }
+
+            100% {
+                box-shadow: 0 0 10px rgba(255, 68, 68, 0.2);
+                border-color: rgba(255, 68, 68, 0.6);
+            }
+        }
+
+        /* Override / Warning Modal */
+        .override-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(4, 9, 15, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background-color: #120303;
+            border: 2px solid var(--red-danger);
+            border-radius: 4px;
+            padding: 30px;
+            max-width: 650px;
+            width: 90%;
+            box-shadow: 0 0 35px rgba(255, 68, 68, 0.4);
+            animation: modal-appear 0.2s cubic-bezier(0.165, 0.84, 0.44, 1);
+        }
+
+        @keyframes modal-appear {
+            from {
+                transform: scale(0.9);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .modal-text {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 13px;
+            color: #ff9999;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            margin: 0 0 25px 0;
+            text-align: left;
+        }
+
+        .btn-close-modal {
+            background: transparent;
+            border: 1px solid var(--red-danger);
+            color: var(--red-danger);
+            font-family: 'Share Tech Mono', monospace;
+            font-weight: bold;
+            font-size: 12px;
+            padding: 8px 20px;
+            cursor: pointer;
+            border-radius: 2px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-close-modal:hover {
+            background: var(--red-danger);
+            color: #000;
+            box-shadow: 0 0 15px rgba(255, 68, 68, 0.5);
+        }
+
+        /* Glitch Screen Overlay */
+        .glitch-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(255, 0, 0, 0.15);
+            z-index: 9998;
+            pointer-events: none;
+            animation: glitch-flash 0.1s infinite;
+        }
+
+        @keyframes glitch-flash {
+            0% {
+                background: rgba(255, 0, 0, 0.2);
+            }
+
+            50% {
+                background: rgba(255, 0, 0, 0);
+            }
+
+            100% {
+                background: rgba(255, 0, 0, 0.25);
+            }
+        }
+
+        /* Mission Failure Screen Overlay */
+        .mission-failure-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(2, 2, 5, 0.95);
+            z-index: 10001;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(15px);
+        }
+
+        .fail-modal-content {
+            border: 2px solid var(--red-danger);
+            background: #140505;
+            border-radius: 4px;
+            padding: 40px;
+            text-align: center;
+            max-width: 600px;
+            box-shadow: 0 0 40px rgba(255, 68, 68, 0.5);
+        }
+
+        .fail-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 24px;
+            color: var(--red-danger);
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px var(--red-danger);
+        }
+
+        .fail-subtitle {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .fail-reason {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 30px;
+            border-top: 1px solid rgba(255, 68, 68, 0.2);
+            padding-top: 15px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Static Noise CRT overlay -->
+    <div class="noise-overlay"></div>
+
+    <!-- Retro Boot Loader Overlay Screen -->
+    <div id="boot-screen" class="boot-screen">
+        <div class="boot-content">
+            <div class="boot-logo">HELIX DYNAMICS</div>
+            <div id="boot-terminal" class="boot-terminal"></div>
+            <div class="boot-progress-container">
+                <div id="boot-progress-bar" class="boot-progress-bar"></div>
+            </div>
+            <div id="boot-status" class="boot-status">SISTEMA OFFLINE — CONEXÃO REQUERIDA</div>
+            <button id="jack-in-btn" class="jack-in-btn" style="display: none;">ACESSAR SISTEMA</button>
+        </div>
+    </div>
+
+    <!-- LOGISTICS SCREEN -->
+    <div id="app-logistics-screen" class="screen-container hidden">
+        <!-- Header UI -->
+        <header class="system-header">
+            <div class="header-left">// HELIX DYNAMICS — SISTEMA DE GERENCIAMENTO v4.1.7 //</div>
+            <div class="header-center">
+                <span class="pulse-indicator">█</span>
+                <span class="net-status">AGENTE CONECTADO — ACESSO NÍV. 3</span>
+                <button id="btn-calibration-toggle" onclick="toggleCalibrationMode()"
+                    style="margin-left: 15px; font-family: 'Share Tech Mono', monospace; font-size: 11px; font-weight: bold; background: transparent; border: 1px solid var(--amber-warn); color: var(--amber-warn); cursor: pointer; padding: 2px 8px; border-radius: 2px; text-transform: uppercase;">[
+                    MODO CALIBRAÇÃO ]</button>
+            </div>
+            <div class="header-right" style="display: flex; align-items: center; gap: 15px;">
+                <button onclick="showScreen('menu'); Synth.playClick();"
+                    style="font-family: 'Share Tech Mono', monospace; font-size: 11px; font-weight: bold; background: transparent; border: 1px solid var(--cyan-primary); color: var(--cyan-primary); cursor: pointer; padding: 2px 8px; border-radius: 2px; text-transform: uppercase;">[
+                    VOLTAR ]</button>
+                <span id="header-clock">00:00:00</span>
+            </div>
+        </header>
+
+        <!-- Main Grid -->
+        <main class="main-content">
+            <!-- Blueprint section with SVG -->
+            <div class="blueprint-section">
+                <div class="blueprint-container">
+                    <img src="train.jpeg" class="blueprint-image blurred" alt="Planta do Trem">
+                    <div class="scanline-anim"></div>
+                    <!-- Dynamic SVG overlaid on the image -->
+                    <svg id="blueprint-svg" viewBox="0 0 2752 1536" class="blueprint-svg"></svg>
+                </div>
+            </div>
+
+            <!-- Lower console HUD panels -->
+            <div class="panels-section">
+                <!-- Left Console Panel: Selected Node info / Breach Protocol -->
+                <div class="hud-panel" id="info-panel-hud">
+                    <div class="panel-header">
+                        <span>DIAGNÓSTICO DO COMPARTIMENTO</span>
+                        <span id="comp-status-badge"></span>
+                    </div>
+                    <div id="info-panel-content" style="flex: 1; display: flex; flex-direction: column;">
+                        <div class="empty-panel-prompt">
+                            <div class="prompt-title">NENHUM COMPARTIMENTO SELECIONADO</div>
+                            <div class="prompt-subtitle">SELECIONE UM COMPARTIMENTO DA PLANTA DO TREM PARA EXECUTAR
+                                LEITURA DE SENSORES</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Console Panel: Diagnostic Output Log -->
+                <div class="hud-panel">
+                    <div class="panel-header">LOG DE OPERAÇÕES DO TERMINAL</div>
+                    <div class="logs-container" id="logs-container">
+                        <!-- Logs populated here -->
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Floating interactive tooltip -->
+        <div id="tech-tooltip" class="tech-tooltip"></div>
+
+        <!-- Calibration Overlay Panel -->
+        <div id="calibration-panel" class="calibration-panel hidden">
+            <div class="cal-header">
+                <span>CALIBRAÇÃO DE MÁSCARA</span>
+                <button onclick="toggleCalibrationMode()"
+                    style="background: transparent; border: none; color: var(--amber-warn); cursor: pointer; font-size: 14px; font-weight: bold;">✕</button>
+            </div>
+
+            <div class="cal-section">
+                <div class="cal-section-title">Selecionar Elemento</div>
+                <select id="cal-element-selector" class="cal-select"
+                    onchange="const val = this.value.split(':'); selectCalibrationElement(val[0], val[1]);">
+                    <optgroup label="Compartimentos">
+                        <option value="compartment:cabine">CABINE DE CONTROLE CENTRAL</option>
+                        <option value="compartment:alfa">SUB-SISTEMA E REDE</option>
+                        <option value="compartment:beta">VAGÃO DE CARGA COMUM</option>
+                        <option value="compartment:gama">VAGÃO DE CARGA ESPECIAL</option>
+                        <option value="compartment:central">MÓDULO CENTRAL</option>
+                    </optgroup>
+                    <optgroup label="Portas">
+                        <option value="door:D-A1">Porta D-A1 (Acesso Alfa)</option>
+                        <option value="door:D-A2">Porta D-A2 (Saída Alfa)</option>
+                        <option value="door:D-B1">Porta D-B1 (Acesso Beta)</option>
+                        <option value="door:D-B2">Porta D-B2 (Saída Beta)</option>
+                        <option value="door:D-G1">Porta D-G1 (Acesso Gama)</option>
+                        <option value="door:D-G2">Porta D-G2 (Saída Gama)</option>
+                        <option value="door:D-C1">Porta D-C1 (Acesso Central)</option>
+                    </optgroup>
+                </select>
+            </div>
+
+            <div class="cal-section">
+                <div class="cal-section-title">Coordenadas e Dimensões</div>
+                <div class="cal-row">
+                    <div class="cal-field">
+                        <label>Posição X</label>
+                        <div class="cal-input-container">
+                            <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('x', -10)">-10</button>
+                            <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('x', -1)">-1</button>
+                            <input type="text" id="cal-input-x" oninput="handleCalInputChange('x', this.value)">
+                            <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('x', 1)">+1</button>
+                            <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('x', 10)">+10</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="cal-row">
+                    <div class="cal-field">
+                        <label>Posição Y</label>
+                        <div class="cal-input-container">
+                            <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('y', -10)">-10</button>
+                            <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('y', -1)">-1</button>
+                            <input type="text" id="cal-input-y" oninput="handleCalInputChange('y', this.value)">
+                            <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('y', 1)">+1</button>
+                            <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('y', 10)">+10</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="cal-dimension-fields">
+                    <div class="cal-row">
+                        <div class="cal-field">
+                            <label>Largura (W)</label>
+                            <div class="cal-input-container">
+                                <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('w', -10)">-10</button>
+                                <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('w', -1)">-1</button>
+                                <input type="text" id="cal-input-w" oninput="handleCalInputChange('w', this.value)">
+                                <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('w', 1)">+1</button>
+                                <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('w', 10)">+10</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="cal-row">
+                        <div class="cal-field">
+                            <label>Altura (H)</label>
+                            <div class="cal-input-container">
+                                <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('h', -10)">-10</button>
+                                <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('h', -1)">-1</button>
+                                <input type="text" id="cal-input-h" oninput="handleCalInputChange('h', this.value)">
+                                <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('h', 1)">+1</button>
+                                <button class="cal-nudge-btn" onclick="nudgeCalibrationElement('h', 10)">+10</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cal-section">
+                <div class="cal-section-title">Código de Configuração Javascript</div>
+                <textarea id="cal-json-output" class="cal-textarea" readonly></textarea>
+                <button id="cal-btn-copy" class="cal-btn" onclick="copyCalibrationJSON()"
+                    style="margin-top: 10px;">Copiar Código JSON</button>
+            </div>
+
+            <div class="cal-section">
+                <div class="cal-instructions">
+                    <strong>DICAS DE USO:</strong><br>
+                    • Clique e arraste as caixas ou portas no trem.<br>
+                    • Arraste a alça vermelha no canto para redimensionar.<br>
+                    • Setas do teclado movem o elemento selecionado (+Shift para 10px).<br>
+                    • Ctrl + Setas redimensionam o elemento (+Shift para 10px).<br>
+                    • Atalho: <strong>Ctrl + Shift + C</strong> abre/fecha esta janela.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN MENU SCREEN -->
+    <div id="app-menu-screen" class="screen-container hidden">
+        <header class="system-header">
+            <div class="header-left">// HD - SISTEMA MAGLEV 4.1.7 //</div>
+            <div class="header-center">
+                <span class="pulse-indicator">█</span>
+                <span class="net-status">AGENTE CONECTADO — ACESSO NÍV. 3</span>
+            </div>
+            <div class="header-right" id="menu-header-clock">00:00:00</div>
+        </header>
+
+        <div class="menu-wrapper">
+            <div class="menu-title-block">
+                <h1 class="menu-title">SISTEMA OPERACIONAL DA LOCOMOTIVA</h1>
+                <div class="menu-subtitle">Acesso de Rede Estabelecido</div>
+            </div>
+
+            <div class="menu-options-container">
+                <!-- Option 1: Logistics -->
+                <div class="menu-card" onclick="showScreen('logistics'); Synth.playClick();">
+                    <div class="menu-card-icon">🎛️</div>
+                    <h2 class="menu-card-title">Logística de Vagões</h2>
+                    <p class="menu-card-desc">
+                        Acesse a planta física da composição, telemetria das travas pneumáticas e decodificação do
+                        painel de bypass do barramento central.
+                    </p>
+                </div>
+
+                <!-- Option 2: Telemetry -->
+                <div class="menu-card" onclick="showScreen('telemetry'); Synth.playClick();">
+                    <div class="menu-card-icon">📡</div>
+                    <h2 class="menu-card-title">Telemetria & Radar</h2>
+                    <p class="menu-card-desc">
+                        Monitore a propulsão cinética Maglev, radar ativo de varredura de proximidade, status dos
+                        thrusters e cronometragem vetorial.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TELEMETRY SCREEN -->
+    <div id="app-telemetry-screen" class="screen-container hidden">
+        <header class="system-header">
+            <div class="header-left">// HELIX DYNAMICS — TELEMETRIA & DIAGNÓSTICO VETORIAL //</div>
+            <div class="header-center">
+                <span class="pulse-indicator">█</span>
+                <span class="net-status">AGENTE CONECTADO — ACESSO NÍV. 3</span>
+            </div>
+            <div class="header-right" style="display: flex; align-items: center; gap: 15px;">
+                <button onclick="showScreen('menu'); Synth.playClick();"
+                    style="font-family: 'Share Tech Mono', monospace; font-size: 11px; font-weight: bold; background: transparent; border: 1px solid var(--cyan-primary); color: var(--cyan-primary); cursor: pointer; padding: 2px 8px; border-radius: 2px; text-transform: uppercase;">[
+                    VOLTAR ]</button>
+                <span id="telemetry-header-clock">00:00:00</span>
+            </div>
+        </header>
+
+        <main class="telemetry-content">
+            <div class="telemetry-panel-left">
+                <!-- Bloco de Velocidade Maglev (canto superior esquerdo) -->
+                <div class="telemetry-hud-panel">
+                    <div class="panel-header">PROPULSÃO CINÉTICA MAGLEV</div>
+                    <div class="panel-body speed-body">
+                        <div class="speed-label">VELOCIDADE ATUAL DO VETOR:</div>
+                        <div class="speed-value" id="telemetry-speed">420.0 km/h</div>
+                        <div class="speed-subtext">Estabilidade de Cruzeiro: 99.8%</div>
+                        <div class="speed-bar-container">
+                            <div class="speed-bar-fill" id="telemetry-speed-bar" style="width: 84%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Matriz de Integridade (canto inferior esquerdo) -->
+                <div class="telemetry-hud-panel" style="margin-top: 20px;">
+                    <div class="panel-header">MATRIZ DE INTEGRIDADE DOS INJETORES & THRUSTERS</div>
+                    <div class="panel-body integrity-body">
+                        <div class="integrity-container">
+                            <!-- Left: SVG Schematic -->
+                            <div class="integrity-schematic">
+                                <svg width="100%" height="100%" viewBox="0 0 160 220" style="max-height: 220px;" xmlns="http://www.w3.org/2000/svg">
+                                    <!-- Background grid corner brackets -->
+                                    <path d="M 5,15 L 5,5 L 15,5" stroke="#00ff66" stroke-width="1" fill="none" opacity="0.3" />
+                                    <path d="M 155,15 L 155,5 L 145,5" stroke="#00ff66" stroke-width="1" fill="none" opacity="0.3" />
+                                    <path d="M 5,205 L 5,215 L 15,215" stroke="#00ff66" stroke-width="1" fill="none" opacity="0.3" />
+                                    <path d="M 155,205 L 155,215 L 145,215" stroke="#00ff66" stroke-width="1" fill="none" opacity="0.3" />
+                                    
+                                    <!-- Locomotive outer hull wireframe -->
+                                    <path d="M 50,20 L 110,20 L 125,45 L 125,175 L 115,185 L 45,185 L 35,175 L 35,45 Z" fill="rgba(0, 15, 30, 0.4)" stroke="#00aaff" stroke-width="1.5" opacity="0.8" />
+                                    
+                                    <!-- Connection conduit lines -->
+                                    <path d="M 36,60 L 63,100 M 36,75 L 63,105 M 36,90 L 63,110" stroke="rgba(0, 255, 204, 0.3)" stroke-width="1.2" fill="none" />
+                                    <path d="M 124,60 L 97,100 M 124,75 L 97,105 M 124,90 L 97,110" stroke="rgba(0, 255, 204, 0.3)" stroke-width="1.2" fill="none" />
+                                    <path d="M 75,123 L 60,185 M 85,123 L 100,185" stroke="rgba(255, 170, 0, 0.3)" stroke-width="1.2" fill="none" />
+
+                                    <!-- Mag-Coils Left -->
+                                    <rect x="22" y="56" width="14" height="8" rx="2" stroke="#00ffcc" stroke-width="1.5" fill="none" class="mag-coil-pulse-1" />
+                                    <rect x="22" y="71" width="14" height="8" rx="2" stroke="#00ffcc" stroke-width="1.5" fill="none" class="mag-coil-pulse-2" />
+                                    <rect x="22" y="86" width="14" height="8" rx="2" stroke="#00ffcc" stroke-width="1.5" fill="none" class="mag-coil-pulse-3" />
+                                    
+                                    <!-- Mag-Coils Right -->
+                                    <rect x="124" y="56" width="14" height="8" rx="2" stroke="#00ffcc" stroke-width="1.5" fill="none" class="mag-coil-pulse-1" />
+                                    <rect x="124" y="71" width="14" height="8" rx="2" stroke="#00ffcc" stroke-width="1.5" fill="none" class="mag-coil-pulse-2" />
+                                    <rect x="124" y="86" width="14" height="8" rx="2" stroke="#00ffcc" stroke-width="1.5" fill="none" class="mag-coil-pulse-3" />
+
+                                    <!-- Cryo Sub-Core (Warning 71% - Amber) -->
+                                    <polygon points="80,85 97,95 97,115 80,125 63,115 63,95" stroke="#ffaa00" stroke-width="2" fill="none" class="sub-core-glow" />
+                                    <circle cx="80" cy="105" r="8" stroke="#ffaa00" stroke-width="1.5" fill="none" class="sub-core-glow" />
+
+                                    <!-- Thrusters Nozzles -->
+                                    <rect x="52" y="185" width="16" height="10" fill="#15222e" stroke="#00ffcc" stroke-width="1.5" />
+                                    <rect x="92" y="185" width="16" height="10" fill="#15222e" stroke="#00ffcc" stroke-width="1.5" />
+                                    
+                                    <!-- Animated Thruster Plasma Flames -->
+                                    <polygon points="54,195 66,195 60,215" fill="rgba(0, 255, 204, 0.6)" stroke="#00ffcc" stroke-width="1">
+                                        <animate attributeName="points"
+                                                 values="54,195 66,195 60,215; 54,195 66,195 58,222; 54,195 66,195 62,210; 54,195 66,195 60,215"
+                                                 dur="0.12s" repeatCount="indefinite" />
+                                    </polygon>
+                                    <polygon points="94,195 106,195 100,215" fill="rgba(0, 255, 204, 0.6)" stroke="#00ffcc" stroke-width="1">
+                                        <animate attributeName="points"
+                                                 values="94,195 106,195 100,215; 94,195 106,195 102,222; 94,195 106,195 98,210; 94,195 106,195 100,215"
+                                                 dur="0.15s" repeatCount="indefinite" />
+                                    </polygon>
+
+                                    <!-- Labels -->
+                                    <text x="80" y="34" font-family="'Share Tech Mono', monospace" font-size="8" fill="#00ff66" text-anchor="middle" letter-spacing="1">HD-LOKO v4.1</text>
+                                    <text x="80" y="165" font-family="'Share Tech Mono', monospace" font-size="7" fill="#00aaff" text-anchor="middle" opacity="0.8">SYS ACTIVE</text>
+                                </svg>
+                            </div>
+
+                            <!-- Right: Original Progress Bars -->
+                            <div class="integrity-bars">
+                                <div class="integrity-row">
+                                    <div class="integrity-info">
+                                        <span class="integrity-name">Bobinas de Indução Magnética Primárias (Mag-Coils)</span>
+                                        <span class="integrity-status">
+                                            <span class="status-dot-wrapper">
+                                                <svg width="20" height="20">
+                                                    <circle cx="10" cy="10" r="6" fill="#00ff66">
+                                                        <animate attributeName="opacity" values="1;0.2;1" dur="1.5s"
+                                                            repeatCount="indefinite" />
+                                                    </circle>
+                                                </svg>
+                                            </span>
+                                            ONLINE
+                                        </span>
+                                    </div>
+                                    <div class="progress-bar-container">
+                                        <div class="progress-bar-fill" style="width: 94%;">94%</div>
+                                    </div>
+                                </div>
+
+                                <div class="integrity-row">
+                                    <div class="integrity-info">
+                                        <span class="integrity-name">Injetores Hidráulicos de Vetorização (Thruster 01)</span>
+                                        <span class="integrity-status">
+                                            <span class="status-dot-wrapper">
+                                                <svg width="20" height="20">
+                                                    <circle cx="10" cy="10" r="6" fill="#00ff66">
+                                                        <animate attributeName="opacity" values="1;0.2;1" dur="1.5s"
+                                                            repeatCount="indefinite" />
+                                                    </circle>
+                                                </svg>
+                                            </span>
+                                            ONLINE
+                                        </span>
+                                    </div>
+                                    <div class="progress-bar-container">
+                                        <div class="progress-bar-fill" style="width: 87%;">87%</div>
+                                    </div>
+                                </div>
+
+                                <div class="integrity-row">
+                                    <div class="integrity-info">
+                                        <span class="integrity-name">Injetores Hidráulicos de Vetorização (Thruster 02)</span>
+                                        <span class="integrity-status">
+                                            <span class="status-dot-wrapper">
+                                                <svg width="20" height="20">
+                                                    <circle cx="10" cy="10" r="6" fill="#00ff66">
+                                                        <animate attributeName="opacity" values="1;0.2;1" dur="1.5s"
+                                                            repeatCount="indefinite" />
+                                                    </circle>
+                                                </svg>
+                                            </span>
+                                            ONLINE
+                                        </span>
+                                    </div>
+                                    <div class="progress-bar-container">
+                                        <div class="progress-bar-fill" style="width: 88%;">88%</div>
+                                    </div>
+                                </div>
+
+                                <div class="integrity-row">
+                                    <div class="integrity-info">
+                                        <span class="integrity-name">Matriz de Arrefecimento Criogênico Sub-Core</span>
+                                        <span class="integrity-status">
+                                            <span class="status-dot-wrapper">
+                                                <svg width="20" height="20">
+                                                    <circle cx="10" cy="10" r="6" fill="#ffaa00">
+                                                        <animate attributeName="opacity" values="1;0.2;1" dur="1.5s"
+                                                            repeatCount="indefinite" />
+                                                    </circle>
+                                                </svg>
+                                            </span>
+                                            WARNING
+                                        </span>
+                                    </div>
+                                    <div class="progress-bar-container warning">
+                                        <div class="progress-bar-fill warning" style="width: 71%;">71%</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="telemetry-panel-right">
+                <!-- Bloco de Cronometragem e Trajeto (canto superior direito) -->
+                <div class="telemetry-hud-panel">
+                    <div class="panel-header">CRONOMETRAGEM E CONTROLE DE TRAJETO</div>
+                    <div class="panel-body time-body">
+                        <div class="time-block">
+                            <div class="time-label">TEMPO DE PERCURSO DECORRIDO (UP-TIME):</div>
+                            <div class="time-value uptime-color" id="telemetry-uptime">00:32:14</div>
+                            <div class="time-subtext">Partida: Nova Vitória</div>
+                        </div>
+                        <div class="time-block" style="margin-top: 15px;">
+                            <div class="time-label">TEMPO RESTANTE PARA ESTAÇÃO (DOWN-TIME):</div>
+                            <div class="time-value downtime-color" id="telemetry-downtime">00:27:46</div>
+                            <div class="time-subtext text-warning">Atenção: Impacto cinético ao zerar</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sonar Rotativo (canto inferior direito) -->
+                <div class="telemetry-hud-panel" style="margin-top: 20px;">
+                    <div class="panel-header">SISTEMA RADAR E FILTRO DE PROXIMIDADE ACTIVO</div>
+                    <div class="panel-body sonar-body">
+                        <svg width="200" height="200" viewBox="0 0 200 200"
+                            style="background: #000; border-radius: 50%; border: 2px solid #00ff66; box-shadow: 0 0 15px rgba(0, 255, 102, 0.2);">
+                            <defs>
+                                <clipPath id="radar-clip">
+                                    <circle cx="100" cy="100" r="98" />
+                                </clipPath>
+                            </defs>
+
+                            <g clip-path="url(#radar-clip)">
+                                <!-- Faint horizontal grid lines moving down -->
+                                <line x1="0" y1="-20" x2="200" y2="-20" stroke="#001808" stroke-width="1">
+                                    <animate attributeName="y1" from="-20" to="220" dur="3s" begin="0s" repeatCount="indefinite" />
+                                    <animate attributeName="y2" from="-20" to="220" dur="3s" begin="0s" repeatCount="indefinite" />
+                                </line>
+                                <line x1="0" y1="-20" x2="200" y2="-20" stroke="#001808" stroke-width="1">
+                                    <animate attributeName="y1" from="-20" to="220" dur="3s" begin="1s" repeatCount="indefinite" />
+                                    <animate attributeName="y2" from="-20" to="220" dur="3s" begin="1s" repeatCount="indefinite" />
+                                </line>
+                                <line x1="0" y1="-20" x2="200" y2="-20" stroke="#001808" stroke-width="1">
+                                    <animate attributeName="y1" from="-20" to="220" dur="3s" begin="2s" repeatCount="indefinite" />
+                                    <animate attributeName="y2" from="-20" to="220" dur="3s" begin="2s" repeatCount="indefinite" />
+                                </line>
+
+                                <!-- Maglev Guideway (Trilho) -->
+                                <line x1="85" y1="0" x2="85" y2="200" stroke="#003311" stroke-width="2" />
+                                <line x1="115" y1="0" x2="115" y2="200" stroke="#003311" stroke-width="2" />
+
+                                <!-- Active guideway light stripe with motion animation -->
+                                <line x1="85" y1="0" x2="85" y2="200" stroke="#00ff66" stroke-width="1.5" stroke-dasharray="8,16" opacity="0.6">
+                                    <animate attributeName="stroke-dashoffset" values="24;0" dur="0.8s" repeatCount="indefinite" />
+                                </line>
+                                <line x1="115" y1="0" x2="115" y2="200" stroke="#00ff66" stroke-width="1.5" stroke-dasharray="8,16" opacity="0.6">
+                                    <animate attributeName="stroke-dashoffset" values="24;0" dur="0.8s" repeatCount="indefinite" />
+                                </line>
+
+                                <!-- Moving guideway ties/sleepers -->
+                                <line x1="85" y1="-10" x2="115" y2="-10" stroke="#00ff66" stroke-width="1" opacity="0.4">
+                                    <animate attributeName="y1" from="-10" to="210" dur="1.2s" begin="0s" repeatCount="indefinite" />
+                                    <animate attributeName="y2" from="-10" to="210" dur="1.2s" begin="0s" repeatCount="indefinite" />
+                                </line>
+                                <line x1="85" y1="-10" x2="115" y2="-10" stroke="#00ff66" stroke-width="1" opacity="0.4">
+                                    <animate attributeName="y1" from="-10" to="210" dur="1.2s" begin="0.3s" repeatCount="indefinite" />
+                                    <animate attributeName="y2" from="-10" to="210" dur="1.2s" begin="0.3s" repeatCount="indefinite" />
+                                </line>
+                                <line x1="85" y1="-10" x2="115" y2="-10" stroke="#00ff66" stroke-width="1" opacity="0.4">
+                                    <animate attributeName="y1" from="-10" to="210" dur="1.2s" begin="0.6s" repeatCount="indefinite" />
+                                    <animate attributeName="y2" from="-10" to="210" dur="1.2s" begin="0.6s" repeatCount="indefinite" />
+                                </line>
+                                <line x1="85" y1="-10" x2="115" y2="-10" stroke="#00ff66" stroke-width="1" opacity="0.4">
+                                    <animate attributeName="y1" from="-10" to="210" dur="1.2s" begin="0.9s" repeatCount="indefinite" />
+                                    <animate attributeName="y2" from="-10" to="210" dur="1.2s" begin="0.9s" repeatCount="indefinite" />
+                                </line>
+
+                                <!-- Lateral Beacons (side signals passing by) -->
+                                <circle cx="65" cy="-20" r="3" fill="#00ff66" opacity="0.7">
+                                    <animate attributeName="cy" from="-20" to="220" dur="1.6s" begin="0.2s" repeatCount="indefinite" />
+                                    <animate attributeName="opacity" values="0;0.8;0.8;0" keyTimes="0;0.1;0.9;1" dur="1.6s" begin="0.2s" repeatCount="indefinite" />
+                                </circle>
+                                <circle cx="135" cy="-20" r="3" fill="#ffaa00" opacity="0.7">
+                                    <animate attributeName="cy" from="-20" to="220" dur="1.6s" begin="1.0s" repeatCount="indefinite" />
+                                    <animate attributeName="opacity" values="0;0.8;0.8;0" keyTimes="0;0.1;0.9;1" dur="1.6s" begin="1.0s" repeatCount="indefinite" />
+                                </circle>
+
+                                <!-- Faint concentric circles -->
+                                <circle cx="100" cy="100" r="80" stroke="#003311" stroke-width="1" fill="none" opacity="0.5" />
+                                <circle cx="100" cy="100" r="50" stroke="#003311" stroke-width="1" fill="none" opacity="0.5" />
+                                <circle cx="100" cy="100" r="20" stroke="#003311" stroke-width="1" fill="none" opacity="0.5" />
+
+                                <!-- Axis Lines -->
+                                <line x1="100" y1="0" x2="100" y2="200" stroke="#003311" stroke-width="1" opacity="0.5" />
+                                <line x1="0" y1="100" x2="200" y2="100" stroke="#003311" stroke-width="1" opacity="0.5" />
+
+                                <!-- Central point (Loko itself) -->
+                                <circle cx="100" cy="100" r="4" fill="#00ff66" />
+                                <circle cx="100" cy="100" r="8" stroke="#00ff66" stroke-width="1" fill="none" opacity="0.5">
+                                    <animate attributeName="r" values="4;15;4" dur="2s" repeatCount="indefinite" />
+                                    <animate attributeName="opacity" values="0.8;0;0.8" dur="2s" repeatCount="indefinite" />
+                                </circle>
+
+                                <!-- Rotating sweep line -->
+                                <line x1="100" y1="100" x2="100" y2="0" stroke="#00ff66" stroke-width="2" opacity="0.7">
+                                    <animateTransform attributeName="transform" type="rotate" from="0 100 100" to="360 100 100" dur="4s" repeatCount="indefinite" />
+                                </line>
+                            </g>
+                        </svg>
+                        <div class="sonar-subtext">// VARREDURA DE PROXIMIDADE EM ANDAMENTO //</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Override button at bottom -->
+        <div class="override-section">
+            <button class="btn-override" onclick="triggerEmergencyOverride()">[ EFETUAR OVERRIDE DE EMERGÊNCIA — PARADA
+                COMPLETA ]</button>
+        </div>
+    </div>
+
+    <!-- Emergency Warning Override Modal & Glitch Overlay -->
+    <div id="glitch-overlay" class="glitch-overlay hidden"></div>
+
+    <div id="override-modal" class="override-modal hidden">
+        <div class="modal-content">
+            <pre class="modal-text">
+======================================================================
+⚠️ ALERTA DE SEGURANÇA HELIX DYNAMICS — PROTOCOLO ANTIFALHA CRÍTICO ⚠️
+======================================================================
+[ERRO DE DIRETRIZ 0x88F] AÇÃO BLOQUEADA.
+O OVERRIDE DO SISTEMA DE PROPULSÃO FOI NEGADO VIA HARDWARE REMOTO.
+
+MOTIVO: SEGURANÇA LOCAL DO VETOR DE CARGA.
+MEDIDAS DE INTERRUPÇÃO CINETICA EXIGEM ASSINATURA BIOMÉTRICA DE COMAN-
+DO PRESENCIAL. AÇÃO EXCLUSIVA APENAS ATRAVÉS DA [CABINE DE CONTROLE].
+======================================================================</pre>
+            <div style="text-align: right; margin-top: 15px;">
+                <button class="btn-close-modal" onclick="closeOverrideModal()">[ FECHAR ALERTA ]</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mission Failure Overlay -->
+    <div id="mission-failure-screen" class="mission-failure-screen hidden">
+        <div class="fail-modal-content">
+            <h1 class="fail-title">⚠️ COLISÃO CRÍTICA / IMPACTO VETORIAL ⚠️</h1>
+            <p class="fail-subtitle">O tempo limite para a chegada à estação expirou e os freios de emergência
+                automáticos falharam.</p>
+            <p class="fail-reason">Protocolo de colisão ativado pela Helix Dynamics. Conectores e link físico
+                corrompidos.</p>
+            <button class="btn-close-modal" onclick="resetTelemetryAndSystem()">[ RESETAR SISTEMA ]</button>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. DATA SCHEMAS & STATE MANAGER
+        // ==========================================
+
+        const compartmentSpecs = [
+            { id: 'cabine', name: 'CABINE DE CONTROLE CENTRAL', x: 280, y: 471, w: 374, h: 614 },
+            { id: 'alfa', name: 'SUB-SISTEMA E REDE', x: 655, y: 471, w: 599, h: 614 },
+            { id: 'central', name: 'MÓDULO CENTRAL', x: 1254, y: 471, w: 598, h: 614 },
+            { id: 'beta', name: 'VAGÃO DE CARGA COMUM', x: 1852, y: 471, w: 652, h: 614 }
+        ];
+
+        const doorSpecs = [
+            { id: 'D-A1', name: 'PORTA D-A1', x: 651, y: 747, initialLocked: true, compartments: ['cabine', 'alfa'] },
+            { id: 'D-A2', name: 'PORTA D-A2', x: 1254, y: 755, initialLocked: true, compartments: ['alfa', 'central'] },
+            { id: 'D-B1', name: 'PORTA D-B1', x: 1855, y: 750, initialLocked: true, compartments: ['central', 'beta'] },
+            { id: 'D-C1', name: 'PORTA D-C1', x: 2472, y: 735, initialLocked: false, compartments: ['beta'] },
+            { id: 'D-EXT-U', name: 'PORTA D-EXT-U', x: 1565, y: 613, initialLocked: true, compartments: ['central'] },
+            { id: 'D-EXT-D', name: 'PORTA D-EXT-D', x: 1567, y: 974, initialLocked: true, compartments: ['central'] }
+        ];
+
+        // Core App States
+        const state = {
+            systemUnlocked: false,
+            bypassSuccessPending: false,
+            selectedCompartment: null,
+            doors: {}, // mapped from doorSpecs
+            centralDecrypted: true,
+            // Breach minigame state
+            breach: {
+                active: false,
+                matrix: [],
+                sequence: [],
+                enteredSequence: [],
+                bufferSize: 5,
+                timer: 0,
+                timerInterval: null,
+                activeSelector: 'row', // 'row' or 'col'
+                activeIdx: 0, // row or col index that is playable
+                usedCells: new Set() // stringified "r,c" coordinates
+            }
+        };
+
+        // Calibration Mode State
+        const calibrationState = {
+            active: false,
+            selectedType: null, // 'compartment' or 'door'
+            selectedId: null,   // e.g., 'cabine', 'D-A1'
+            isDragging: false,
+            isResizing: false,
+            dragOffset: { x: 0, y: 0 }
+        };
+
+        // Initialize doors state
+        doorSpecs.forEach(d => {
+            state.doors[d.id] = d.initialLocked; // true = locked, false = unlocked
+        });
+
+        // Compartment details dynamically loaded/read
+        const getCompartmentDetails = (id) => {
+            if (id === 'cabine') {
+                return {
+                    name: 'CABINE DE CONTROLE CENTRAL',
+                    sistemas: ['CPU PRINCIPAL', 'PILOTO AUTO', 'FREIOS DE EMERGÊNCIA'],
+                    note: 'Sistemas de condução e inteligência vetorial da locomotiva corporativa. Diretriz de rota: Nova Vitória -> Região Amazônica. Manifesto de Carga acusa o transporte prioritário. O sistema detecta duas sub-unidades adicionais trancadas sob protocolo de segurança via hardware RFID integrado. Erro de diagnóstico: Sem comunicação digital com os contêineres adicionais. Conteúdo blindado. Abertura remota indisponível.',
+                    doors: ['D-A1']
+                };
+            } else if (id === 'alfa') {
+                return {
+                    name: 'SUB-SISTEMA E REDE',
+                    sistemas: ['REDE COMPOSIÇÃO', 'TERMINAL SUB-NET', 'CONVERSORES MAGLEV'],
+                    note: 'Sub-estação técnica de distribuição de energia e redundância de dados do sistema Maglev. Monitoramento de telemetria ativo no espectro de rádio local. O Terminal de Rede presente neste vagão gerencia as travas magnéticas de segurança dos setores adjacentes. Sem registros de armazenamento ou manifesto de carga alocados para este setor técnico.',
+                    doors: ['D-A1', 'D-A2']
+                };
+            } else if (id === 'central') {
+                if (!state.centralDecrypted) {
+                    return {
+                        name: 'MÓDULO CENTRAL — RECIPIENTE BLINDADO',
+                        dados: 'ACESSO NEGADO [BLINDAGEM NÍV. 7]',
+                        dadosType: 'offline',
+                        criptografia: 'SEGURA (ASSINATURA DESCONHECIDA)',
+                        criptografiaType: 'offline',
+                        note: 'Blindagem de dados física activa. Enlace de telemetria interrompido no barramento interno Helix. Criptografia de hardware de nível militar bloqueando o fluxo de logs. Invada o enlace utilizando o painel de decodificação Breach Protocol para forçar o diagnóstico.',
+                        doors: ['D-A2', 'D-B1', 'D-EXT-U', 'D-EXT-D']
+                    };
+                } else {
+                    return {
+                        name: 'MÓDULO CENTRAL — DECODIFICADO',
+                        status: 'ONLINE',
+                        statusType: 'online',
+                        sistemas: [],
+                        note: 'Módulo central decodificado com sucesso. Presença de uma Carga Especial Secundária sob pressão contínua e isolamento térmico hermético. Aviso: O contêiner opera de forma analógica e autônoma, sem barramento de dados conectado à CityNet ou a esta interface. Impossível extrair dados de conteúdo ou forçar abertura remota.',
+                        doors: ['D-A2', 'D-B1', 'D-EXT-U', 'D-EXT-D']
+                    };
+                }
+            } else if (id === 'beta') {
+                return {
+                    name: 'VAGÃO DE CARGA COMUM',
+                    sistemas: [],
+                    doors: ['D-B1', 'D-C1']
+                };
+            }
+        };
+
+
+        // ==========================================
+        // 2. AUDIO SYNTHESIZER (WEB AUDIO API)
+        // ==========================================
+
+        let audioCtx = null;
+
+        const initAudio = () => {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        };
+
+        const Synth = {
+            beep(freq, duration, type = 'sine', vol = 0.05) {
+                if (!audioCtx) return;
+                try {
+                    const osc = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+
+                    osc.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+                    gainNode.gain.setValueAtTime(vol, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + duration + 0.02);
+                } catch (e) {
+                    console.error("Synth.beep error: ", e);
+                }
+            },
+
+            playClick() {
+                this.beep(1200, 0.06, 'sine', 0.06);
+            },
+
+            playHover() {
+                this.beep(800, 0.02, 'sine', 0.02);
+            },
+
+            playLock() {
+                // Double physical mechanical click
+                this.beep(140, 0.12, 'triangle', 0.2);
+                setTimeout(() => {
+                    this.beep(100, 0.1, 'triangle', 0.25);
+                }, 30);
+            },
+
+            playUnlock() {
+                // High double chime click
+                this.beep(600, 0.1, 'sine', 0.1);
+                setTimeout(() => {
+                    this.beep(900, 0.15, 'sine', 0.08);
+                }, 40);
+            },
+
+            playWarning() {
+                // Alarm siren
+                const now = audioCtx.currentTime;
+                for (let i = 0; i < 3; i++) {
+                    const t = now + i * 0.12;
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(400, t);
+                    osc.frequency.linearRampToValueAtTime(600, t + 0.1);
+                    gain.gain.setValueAtTime(0.06, t);
+                    gain.gain.exponentialRampToValueAtTime(0.00001, t + 0.11);
+                    osc.start(t);
+                    osc.stop(t + 0.12);
+                }
+            },
+
+            playSuccess() {
+                const now = audioCtx.currentTime;
+                const notes = [523.25, 659.25, 783.99, 1046.50]; // C5 - E5 - G5 - C6
+                notes.forEach((f, index) => {
+                    const t = now + index * 0.08;
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(f, t);
+                    gain.gain.setValueAtTime(0.05, t);
+                    gain.gain.exponentialRampToValueAtTime(0.00001, t + 0.25);
+                    osc.start(t);
+                    osc.stop(t + 0.26);
+                });
+            },
+
+            playJackIn() {
+                // Long cybernetic rising sweep
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(80, now);
+                osc.frequency.exponentialRampToValueAtTime(2200, now + 1.4);
+
+                gain.gain.setValueAtTime(0.001, now);
+                gain.gain.linearRampToValueAtTime(0.08, now + 0.5);
+                gain.gain.exponentialRampToValueAtTime(0.00001, now + 1.4);
+
+                osc.start(now);
+                osc.stop(now + 1.41);
+
+                // Secondary hum resonance sweep
+                setTimeout(() => {
+                    const osc2 = audioCtx.createOscillator();
+                    const gain2 = audioCtx.createGain();
+                    osc2.connect(gain2);
+                    gain2.connect(audioCtx.destination);
+                    osc2.type = 'sine';
+                    osc2.frequency.setValueAtTime(150, audioCtx.currentTime);
+                    osc2.frequency.exponentialRampToValueAtTime(3200, audioCtx.currentTime + 1.0);
+                    gain2.gain.setValueAtTime(0.04, audioCtx.currentTime);
+                    gain2.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 1.0);
+                    osc2.start();
+                    osc2.stop(audioCtx.currentTime + 1.01);
+                }, 150);
+            }
+        };
+
+
+        // ==========================================
+        // 2.5 SCREEN MANAGEMENT & TELEMETRY LOGIC
+        // ==========================================
+        let telemetryInterval = null;
+        let speedInterval = null;
+        let uptimeSeconds = 32 * 60 + 14; // 00:32:14
+        let downtimeSeconds = 27 * 60 + 46; // 00:27:46
+        let maglevSpeed = 420.0;
+
+        const formatTime = (totalSeconds) => {
+            const h = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+            const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+            const s = (totalSeconds % 60).toString().padStart(2, '0');
+            return `${h}:${m}:${s}`;
+        };
+
+        const showScreen = (screenId) => {
+            // Hide all screens
+            document.getElementById('app-menu-screen').classList.add('hidden');
+            document.getElementById('app-logistics-screen').classList.add('hidden');
+            document.getElementById('app-telemetry-screen').classList.add('hidden');
+
+            if (screenId === 'menu') {
+                document.getElementById('app-menu-screen').classList.remove('hidden');
+                stopTelemetrySystem();
+            } else if (screenId === 'logistics') {
+                document.getElementById('app-logistics-screen').classList.remove('hidden');
+                renderSVGOverlay();
+                renderInfoPanel();
+                stopTelemetrySystem();
+            } else if (screenId === 'telemetry') {
+                document.getElementById('app-telemetry-screen').classList.remove('hidden');
+                startTelemetrySystem();
+            }
+        };
+
+        const startTelemetrySystem = () => {
+            stopTelemetrySystem();
+
+            // Sync elements immediately
+            const uptimeEl = document.getElementById('telemetry-uptime');
+            const downtimeEl = document.getElementById('telemetry-downtime');
+            if (uptimeEl) uptimeEl.textContent = formatTime(uptimeSeconds);
+            if (downtimeEl) downtimeEl.textContent = formatTime(downtimeSeconds);
+
+            // Up-Time/Down-Time ticking
+            telemetryInterval = setInterval(() => {
+                uptimeSeconds++;
+                downtimeSeconds--;
+
+                if (downtimeSeconds <= 0) {
+                    downtimeSeconds = 0;
+                    stopTelemetrySystem();
+                    triggerMissionFailure();
+                }
+
+                if (uptimeEl) uptimeEl.textContent = formatTime(uptimeSeconds);
+                if (downtimeEl) downtimeEl.textContent = formatTime(downtimeSeconds);
+            }, 1000);
+
+            // Speed oscillation logic
+            speedInterval = setInterval(() => {
+                maglevSpeed = 418.4 + Math.random() * (421.7 - 418.4);
+                const speedEl = document.getElementById('telemetry-speed');
+                const speedBarEl = document.getElementById('telemetry-speed-bar');
+                if (speedEl) speedEl.textContent = `${maglevSpeed.toFixed(1)} km/h`;
+                if (speedBarEl) {
+                    const percentage = (maglevSpeed / 500) * 100;
+                    speedBarEl.style.width = `${percentage}%`;
+                }
+            }, 2000);
+        };
+
+        const stopTelemetrySystem = () => {
+            if (telemetryInterval) {
+                clearInterval(telemetryInterval);
+                telemetryInterval = null;
+            }
+            if (speedInterval) {
+                clearInterval(speedInterval);
+                speedInterval = null;
+            }
+        };
+
+        const triggerEmergencyOverride = () => {
+            Synth.playWarning();
+            document.getElementById('glitch-overlay').classList.remove('hidden');
+            document.getElementById('override-modal').classList.remove('hidden');
+        };
+
+        const closeOverrideModal = () => {
+            Synth.playClick();
+            document.getElementById('glitch-overlay').classList.add('hidden');
+            document.getElementById('override-modal').classList.add('hidden');
+        };
+
+        const triggerMissionFailure = () => {
+            Synth.playWarning();
+            document.getElementById('mission-failure-screen').classList.remove('hidden');
+        };
+
+        const resetTelemetryAndSystem = () => {
+            uptimeSeconds = 32 * 60 + 14;
+            downtimeSeconds = 27 * 60 + 46;
+            maglevSpeed = 420.0;
+            document.getElementById('mission-failure-screen').classList.add('hidden');
+            showScreen('menu');
+            Synth.playJackIn();
+        };
+
+
+        // ==========================================
+        // 3. RETRO TERMINAL LOG CONSOLE
+        // ==========================================
+
+        const logContainer = document.getElementById('logs-container');
+
+        const addLog = (message, type = 'neutro') => {
+            const time = new Date();
+            const timeString = `[${time.toTimeString().split(' ')[0]}]`;
+
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'log-time';
+            timeSpan.textContent = timeString;
+
+            const msgSpan = document.createElement('span');
+            msgSpan.className = `log-msg ${type}`;
+            msgSpan.textContent = message;
+
+            logEntry.appendChild(timeSpan);
+            logEntry.appendChild(msgSpan);
+
+            logContainer.appendChild(logEntry);
+
+            // Buffer cleanup: keep last 40 logs
+            const children = logContainer.children;
+            if (children.length > 40) {
+                logContainer.removeChild(children[0]);
+            }
+
+            // Auto scroll down
+            logContainer.scrollTop = logContainer.scrollHeight;
+        };
+
+
+        // ==========================================
+        // 4. INTERACTIVE SVG GRID MAKER
+        // ==========================================
+
+        const svgEl = document.getElementById('blueprint-svg');
+        const tooltip = document.getElementById('tech-tooltip');
+
+        // Render entire SVG overlay dynamically
+        const renderSVGOverlay = () => {
+            svgEl.innerHTML = ''; // Clean
+
+            if (!state.systemUnlocked) {
+                // Render global padlock screen at absolute center of the 2752x1536 SVG canvas
+                const midX = 1376;
+                const midY = 768;
+
+                const lockGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                lockGroup.setAttribute('id', state.bypassSuccessPending ? 'global-success-pending-gfx' : 'global-locked-gfx');
+                lockGroup.setAttribute('style', state.bypassSuccessPending ? 'cursor: default;' : 'cursor: pointer;');
+                if (!state.bypassSuccessPending) {
+                    lockGroup.addEventListener('click', () => {
+                        startBreachMinigame();
+                    });
+                }
+
+                // Padlock SVG graphic
+                const lockPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                lockPath.setAttribute('class', 'lock-indicator');
+                if (state.bypassSuccessPending) {
+                    lockPath.style.stroke = 'var(--green-ok)';
+                    lockPath.style.animation = 'none';
+                }
+                const lockGfx = state.bypassSuccessPending ? `
+                    M ${midX - 60} ${midY - 30} 
+                    h 120 
+                    v 90 
+                    h -120 
+                    z 
+                    M ${midX - 40} ${midY - 30} 
+                    v -50 
+                    a 40 40 0 0 1 80 0 
+                    v 15
+                ` : `
+                    M ${midX - 60} ${midY - 30} 
+                    h 120 
+                    v 90 
+                    h -120 
+                    z 
+                    M ${midX - 40} ${midY - 30} 
+                    v -40 
+                    a 40 40 0 0 1 80 0 
+                    v 40
+                `;
+                lockPath.setAttribute('d', lockGfx);
+                lockGroup.appendChild(lockPath);
+
+                // Centered padlock pinhole
+                const lockCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                lockCircle.setAttribute('cx', midX);
+                lockCircle.setAttribute('cy', midY + 15);
+                lockCircle.setAttribute('r', '10');
+                lockCircle.setAttribute('fill', state.bypassSuccessPending ? 'var(--green-ok)' : 'var(--amber-warn)');
+                lockGroup.appendChild(lockCircle);
+
+                const lockLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                lockLine.setAttribute('x1', midX);
+                lockLine.setAttribute('y1', midY + 15);
+                lockLine.setAttribute('x2', midX);
+                lockLine.setAttribute('y2', midY + 45);
+                lockLine.setAttribute('stroke', state.bypassSuccessPending ? 'var(--green-ok)' : 'var(--amber-warn)');
+                lockLine.setAttribute('stroke-width', '6');
+                lockGroup.appendChild(lockLine);
+
+                // Blinking Text warning under padlock
+                const lockTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                lockTxt.setAttribute('class', 'lock-text');
+                lockTxt.setAttribute('x', midX);
+                lockTxt.setAttribute('y', midY + 130);
+                lockTxt.setAttribute('text-anchor', 'middle');
+                if (state.bypassSuccessPending) {
+                    lockTxt.style.fill = 'var(--green-ok)';
+                    lockTxt.style.textShadow = '0 0 10px rgba(0, 255, 136, 0.6)';
+                    lockTxt.style.animation = 'none';
+                    lockTxt.textContent = 'ACESSO PERMITIDO';
+                } else {
+                    lockTxt.textContent = 'ACESSO NEGADO';
+                }
+                lockGroup.appendChild(lockTxt);
+
+                if (state.bypassSuccessPending) {
+                    const lockSubtxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    lockSubtxt.setAttribute('x', midX);
+                    lockSubtxt.setAttribute('y', midY + 180);
+                    lockSubtxt.setAttribute('text-anchor', 'middle');
+                    lockSubtxt.setAttribute('font-family', "'Share Tech Mono', monospace");
+                    lockSubtxt.setAttribute('font-size', '24px');
+                    lockSubtxt.setAttribute('fill', 'var(--green-ok)');
+                    lockSubtxt.setAttribute('letter-spacing', '2px');
+                    lockSubtxt.textContent = 'CLIQUE EM "INSPECIONAR DADOS DO TREM" NO PAINEL LATERAL';
+                    lockGroup.appendChild(lockSubtxt);
+                }
+
+                svgEl.appendChild(lockGroup);
+                return; // Stop rendering compartments/doors
+            }
+
+            // 1. Create compartments SVG elements
+            compartmentSpecs.forEach(spec => {
+                const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                group.setAttribute('id', `svg-comp-${spec.id}`);
+                group.setAttribute('class', 'comp-group');
+
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                const isCalSelected = calibrationState.active && calibrationState.selectedType === 'compartment' && calibrationState.selectedId === spec.id;
+                rect.setAttribute('class', `comp-rect ${state.selectedCompartment === spec.id ? 'selected' : ''} ${isCalSelected ? 'cal-selected' : ''}`);
+                rect.setAttribute('x', spec.x);
+                rect.setAttribute('y', spec.y);
+                rect.setAttribute('width', spec.w);
+                rect.setAttribute('height', spec.h);
+                rect.setAttribute('fill', 'transparent');
+
+                if (calibrationState.active) {
+                    rect.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        selectCalibrationElement('compartment', spec.id);
+
+                        const coords = getSVGCoords(e);
+                        calibrationState.isDragging = true;
+                        calibrationState.isResizing = false;
+                        calibrationState.dragOffset.x = coords.x - spec.x;
+                        calibrationState.dragOffset.y = coords.y - spec.y;
+                        document.body.classList.add('cal-drag-active');
+                    });
+                } else {
+                    // Bind mouse actions
+                    rect.addEventListener('mouseenter', (e) => {
+                        rect.setAttribute('stroke-width', '2.0');
+                        showTooltip(spec.name, e);
+                        Synth.playHover();
+                    });
+                    rect.addEventListener('mouseleave', () => {
+                        if (state.selectedCompartment !== spec.id) {
+                            rect.setAttribute('stroke-width', '1.5');
+                        }
+                        hideTooltip();
+                    });
+                    rect.addEventListener('mousemove', (e) => {
+                        moveTooltip(e);
+                    });
+                    rect.addEventListener('click', () => {
+                        selectCompartment(spec.id);
+                    });
+                }
+
+                group.appendChild(rect);
+
+                // Add corner markers (tactical HUD brackets)
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('class', 'tech-corners');
+                const size = 35;
+                // Path data for drawing 4 corner brackets
+                const pathData = `
+                    M ${spec.x} ${spec.y + size} L ${spec.x} ${spec.y} L ${spec.x + size} ${spec.y}
+                    M ${spec.x + spec.w - size} ${spec.y} L ${spec.x + spec.w} ${spec.y} L ${spec.x + spec.w} ${spec.y + size}
+                    M ${spec.x} ${spec.y + spec.h - size} L ${spec.x} ${spec.y + spec.h} L ${spec.x + size} ${spec.y + spec.h}
+                    M ${spec.x + spec.w - size} ${spec.y + spec.h} L ${spec.x + spec.w} ${spec.y + spec.h} L ${spec.x + spec.w} ${spec.y + spec.h - size}
+                `;
+                path.setAttribute('d', pathData);
+                group.appendChild(path);
+
+                // Label Text background and tag inside compartment
+                const textGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+                const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                txt.setAttribute('class', 'label-text');
+                txt.setAttribute('x', spec.x + 20);
+                txt.setAttribute('y', spec.y + 50);
+                txt.textContent = spec.name;
+
+                textGroup.appendChild(txt);
+                group.appendChild(textGroup);
+
+                // If selected in calibration, draw resize handle at bottom-right corner
+                if (isCalSelected) {
+                    const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    handle.setAttribute('cx', spec.x + spec.w);
+                    handle.setAttribute('cy', spec.y + spec.h);
+                    handle.setAttribute('r', '8');
+                    handle.setAttribute('class', 'cal-resize-handle');
+
+                    handle.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        selectCalibrationElement('compartment', spec.id);
+                        calibrationState.isDragging = false;
+                        calibrationState.isResizing = true;
+                        document.body.classList.add('cal-resize-active');
+                    });
+                    group.appendChild(handle);
+                }
+
+                svgEl.appendChild(group);
+            });
+
+            // 3. Create door SVG graphics & buttons
+            doorSpecs.forEach(door => {
+                const isLocked = state.doors[door.id];
+
+                const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                group.setAttribute('id', `svg-door-${door.id}`);
+                group.setAttribute('class', 'door-group');
+
+                const isCalSelected = calibrationState.active && calibrationState.selectedType === 'door' && calibrationState.selectedId === door.id;
+
+                // Visual door rectangle (40x60px default, 60x40px for EXT hatches)
+                const isHorizontal = door.id.includes('EXT');
+                const w = isHorizontal ? 60 : 40;
+                const h = isHorizontal ? 40 : 60;
+
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('class', `door-rect ${isCalSelected ? 'cal-selected' : ''}`);
+                rect.setAttribute('x', door.x - w / 2);
+                rect.setAttribute('y', door.y - h / 2);
+                rect.setAttribute('width', w.toString());
+                rect.setAttribute('height', h.toString());
+                rect.setAttribute('rx', '4');
+                rect.setAttribute('fill', isLocked ? 'rgba(255, 68, 68, 0.25)' : 'rgba(0, 255, 136, 0.25)');
+                rect.setAttribute('stroke', isLocked ? 'var(--red-danger)' : 'var(--green-ok)');
+
+                // Middle color light dot
+                const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                dot.setAttribute('class', 'door-indicator');
+                dot.setAttribute('cx', door.x);
+                dot.setAttribute('cy', door.y);
+                dot.setAttribute('r', '6');
+                dot.setAttribute('fill', isLocked ? 'var(--red-danger)' : 'var(--green-ok)');
+
+                // Flash transition overlay (white overlay flash on click)
+                const flash = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                flash.setAttribute('id', `door-flash-${door.id}`);
+                flash.setAttribute('class', 'door-flash-overlay');
+                flash.setAttribute('x', door.x - w / 2 - 1);
+                flash.setAttribute('y', door.y - h / 2 - 1);
+                flash.setAttribute('width', (w + 2).toString());
+                flash.setAttribute('height', (h + 2).toString());
+                flash.setAttribute('rx', '4');
+
+                // Large transparent interactive click rectangle for ease of access (80x80px hitbox)
+                const clickArea = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                clickArea.setAttribute('x', door.x - 40);
+                clickArea.setAttribute('y', door.y - 40);
+                clickArea.setAttribute('width', '80');
+                clickArea.setAttribute('height', '80');
+                clickArea.setAttribute('fill', 'transparent');
+                clickArea.setAttribute('pointer-events', 'all');
+                clickArea.setAttribute('cursor', 'pointer');
+
+                if (calibrationState.active) {
+                    clickArea.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        selectCalibrationElement('door', door.id);
+
+                        const coords = getSVGCoords(e);
+                        calibrationState.isDragging = true;
+                        calibrationState.isResizing = false;
+                        calibrationState.dragOffset.x = coords.x - door.x;
+                        calibrationState.dragOffset.y = coords.y - door.y;
+                        document.body.classList.add('cal-drag-active');
+                    });
+                } else {
+                    // Bind door events
+                    clickArea.addEventListener('mouseenter', (e) => {
+                        const statusStr = isLocked ? 'TRANCADA' : 'DESTRANCADA';
+                        showTooltip(`${door.name} [${statusStr}]`, e);
+                        Synth.playHover();
+                    });
+                    clickArea.addEventListener('mouseleave', () => {
+                        hideTooltip();
+                    });
+                    clickArea.addEventListener('mousemove', (e) => {
+                        moveTooltip(e);
+                    });
+                    clickArea.addEventListener('click', () => {
+                        toggleDoor(door.id);
+                    });
+                }
+
+                group.appendChild(rect);
+                group.appendChild(dot);
+                group.appendChild(flash);
+                group.appendChild(clickArea);
+
+                svgEl.appendChild(group);
+            });
+        };
+
+        // Custom Floating HUD Tooltip Controls
+        const showTooltip = (text, event) => {
+            tooltip.innerHTML = text;
+            tooltip.style.display = 'block';
+            moveTooltip(event);
+        };
+
+        const moveTooltip = (event) => {
+            // Find coordinate offset within container
+            const containerRect = svgEl.getBoundingClientRect();
+            const x = event.clientX - containerRect.left;
+            const y = event.clientY - containerRect.top;
+
+            // Map percentages relative to the responsive SVG rendering
+            tooltip.style.left = `${(x / containerRect.width) * 100}%`;
+            tooltip.style.top = `${(y / containerRect.height) * 100}%`;
+        };
+
+        const hideTooltip = () => {
+            tooltip.style.display = 'none';
+        };
+
+        // ==========================================
+        // 4.5 MODO CALIBRAÇÃO UTILITIES
+        // ==========================================
+
+        const getSVGCoords = (e) => {
+            const containerRect = svgEl.getBoundingClientRect();
+            const x = ((e.clientX - containerRect.left) / containerRect.width) * 2752;
+            const y = ((e.clientY - containerRect.top) / containerRect.height) * 1536;
+            return { x: Math.round(x), y: Math.round(y) };
+        };
+
+        const selectCalibrationElement = (type, id) => {
+            calibrationState.selectedType = type;
+            calibrationState.selectedId = id;
+
+            // Update dropdown selector
+            const selector = document.getElementById('cal-element-selector');
+            if (selector) {
+                selector.value = `${type}:${id}`;
+            }
+
+            // Show/hide dimension fields depending on element type
+            const dimFields = document.getElementById('cal-dimension-fields');
+            if (dimFields) {
+                dimFields.style.display = type === 'compartment' ? 'block' : 'none';
+            }
+
+            updateCalibrationInputs();
+            renderSVGOverlay();
+        };
+
+        const updateCalibrationInputs = () => {
+            const type = calibrationState.selectedType;
+            const id = calibrationState.selectedId;
+
+            if (type === 'compartment') {
+                const spec = compartmentSpecs.find(c => c.id === id);
+                if (spec) {
+                    document.getElementById('cal-input-x').value = spec.x;
+                    document.getElementById('cal-input-y').value = spec.y;
+                    document.getElementById('cal-input-w').value = spec.w;
+                    document.getElementById('cal-input-h').value = spec.h;
+                }
+            } else if (type === 'door') {
+                const door = doorSpecs.find(d => d.id === id);
+                if (door) {
+                    document.getElementById('cal-input-x').value = door.x;
+                    document.getElementById('cal-input-y').value = door.y;
+                }
+            }
+        };
+
+        const handleCalInputChange = (field, value) => {
+            const type = calibrationState.selectedType;
+            const id = calibrationState.selectedId;
+            const val = parseInt(value, 10);
+            if (isNaN(val)) return;
+
+            if (type === 'compartment') {
+                const spec = compartmentSpecs.find(c => c.id === id);
+                if (spec) {
+                    spec[field] = val;
+                }
+            } else if (type === 'door') {
+                const door = doorSpecs.find(d => d.id === id);
+                if (door) {
+                    door[field] = val;
+                }
+            }
+            renderSVGOverlay();
+            updateCalibrationJSON();
+        };
+
+        const nudgeCalibrationElement = (field, amount) => {
+            const type = calibrationState.selectedType;
+            const id = calibrationState.selectedId;
+            if (!id) return;
+
+            const inputEl = document.getElementById(`cal-input-${field}`);
+            if (inputEl) {
+                let val = parseInt(inputEl.value, 10) + amount;
+                inputEl.value = val;
+                handleCalInputChange(field, val);
+            }
+        };
+
+        const updateCalibrationJSON = () => {
+            const textarea = document.getElementById('cal-json-output');
+            if (!textarea) return;
+
+            const cleanCompartments = compartmentSpecs.map(c => {
+                return `    { id: '${c.id}', name: '${c.name}', x: ${c.x}, y: ${c.y}, w: ${c.w}, h: ${c.h} }`;
+            }).join(',\n');
+
+            const cleanDoors = doorSpecs.map(d => {
+                const initialLocked = d.initialLocked;
+                const compartmentsStr = d.compartments.map(c => `'${c}'`).join(', ');
+                return `    { id: '${d.id}', name: '${d.name}', x: ${d.x}, y: ${d.y}, initialLocked: ${initialLocked}, compartments: [${compartmentsStr}] }`;
+            }).join(',\n');
+
+            textarea.value = `const compartmentSpecs = [\n${cleanCompartments}\n];\n\nconst doorSpecs = [\n${cleanDoors}\n];`;
+        };
+
+        const copyCalibrationJSON = () => {
+            const textarea = document.getElementById('cal-json-output');
+            if (!textarea) return;
+
+            textarea.select();
+            document.execCommand('copy');
+
+            const btn = document.getElementById('cal-btn-copy');
+            if (btn) {
+                const originalText = btn.textContent;
+                btn.textContent = 'COPIADO COM SUCESSO!';
+                btn.style.borderColor = 'var(--green-ok)';
+                btn.style.color = 'var(--green-ok)';
+
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.borderColor = 'var(--amber-warn)';
+                    btn.style.color = 'var(--amber-warn)';
+                }, 2000);
+            }
+            Synth.playSuccess();
+        };
+
+        const toggleCalibrationMode = () => {
+            calibrationState.active = !calibrationState.active;
+
+            const panel = document.getElementById('calibration-panel');
+            const toggleBtn = document.getElementById('btn-calibration-toggle');
+
+            if (calibrationState.active) {
+                panel.classList.remove('hidden');
+                if (toggleBtn) {
+                    toggleBtn.textContent = '[ CALIBRAÇÃO ATIVA ]';
+                    toggleBtn.style.borderColor = 'var(--green-ok)';
+                    toggleBtn.style.color = 'var(--green-ok)';
+                }
+
+                addLog('MODO CALIBRAÇÃO ATIVADO. CLIQUE E ARRASTE COMPARTIMENTOS OU PORTAS.', 'alerta');
+
+                if (!calibrationState.selectedId) {
+                    selectCalibrationElement('compartment', compartmentSpecs[0].id);
+                } else {
+                    selectCalibrationElement(calibrationState.selectedType, calibrationState.selectedId);
+                }
+            } else {
+                panel.classList.add('hidden');
+                if (toggleBtn) {
+                    toggleBtn.textContent = '[ MODO CALIBRAÇÃO ]';
+                    toggleBtn.style.borderColor = 'var(--amber-warn)';
+                    toggleBtn.style.color = 'var(--amber-warn)';
+                }
+                addLog('MODO CALIBRAÇÃO DESATIVADO.', 'neutro');
+            }
+
+            renderSVGOverlay();
+        };
+
+        // Window Mouse Events for Drag and Drop
+        window.addEventListener('mousemove', (e) => {
+            if (!calibrationState.active || (!calibrationState.isDragging && !calibrationState.isResizing)) return;
+
+            const coords = getSVGCoords(e);
+
+            if (calibrationState.selectedType === 'compartment') {
+                const spec = compartmentSpecs.find(c => c.id === calibrationState.selectedId);
+                if (spec) {
+                    if (calibrationState.isDragging) {
+                        spec.x = Math.max(0, coords.x - calibrationState.dragOffset.x);
+                        spec.y = Math.max(0, coords.y - calibrationState.dragOffset.y);
+                    } else if (calibrationState.isResizing) {
+                        spec.w = Math.max(10, coords.x - spec.x);
+                        spec.h = Math.max(10, coords.y - spec.y);
+                    }
+                    updateCalibrationInputs();
+                    renderSVGOverlay();
+                }
+            } else if (calibrationState.selectedType === 'door') {
+                const door = doorSpecs.find(d => d.id === calibrationState.selectedId);
+                if (door) {
+                    if (calibrationState.isDragging) {
+                        door.x = Math.max(0, coords.x - calibrationState.dragOffset.x);
+                        door.y = Math.max(0, coords.y - calibrationState.dragOffset.y);
+                    }
+                    updateCalibrationInputs();
+                    renderSVGOverlay();
+                }
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (!calibrationState.active) return;
+            calibrationState.isDragging = false;
+            calibrationState.isResizing = false;
+            document.body.classList.remove('cal-drag-active');
+            document.body.classList.remove('cal-resize-active');
+            updateCalibrationJSON();
+        });
+
+        // Keyboard navigation and fine-tuning
+        window.addEventListener('keydown', (e) => {
+            // Check for toggle shortcut: Ctrl + Shift + C
+            if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'c') {
+                e.preventDefault();
+                toggleCalibrationMode();
+                return;
+            }
+
+            if (!calibrationState.active || !calibrationState.selectedId) return;
+
+            const isArrow = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
+            if (!isArrow) return;
+
+            if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+
+            e.preventDefault();
+
+            const amount = e.shiftKey ? 10 : 1;
+            const isResize = e.ctrlKey && calibrationState.selectedType === 'compartment';
+
+            if (e.key === 'ArrowLeft') {
+                if (isResize) {
+                    nudgeCalibrationElement('w', -amount);
+                } else {
+                    nudgeCalibrationElement('x', -amount);
+                }
+            } else if (e.key === 'ArrowRight') {
+                if (isResize) {
+                    nudgeCalibrationElement('w', amount);
+                } else {
+                    nudgeCalibrationElement('x', amount);
+                }
+            } else if (e.key === 'ArrowUp') {
+                if (isResize) {
+                    nudgeCalibrationElement('h', -amount);
+                } else {
+                    nudgeCalibrationElement('y', -amount);
+                }
+            } else if (e.key === 'ArrowDown') {
+                if (isResize) {
+                    nudgeCalibrationElement('h', amount);
+                } else {
+                    nudgeCalibrationElement('y', amount);
+                }
+            }
+        });
+
+
+        // ==========================================
+        // 5. INTERACTION LOGIC & ACTION DECK
+        // ==========================================
+
+        const selectCompartment = (id) => {
+            initAudio();
+            state.selectedCompartment = id;
+
+            // Re-render SVG to show highlight selected rect
+            renderSVGOverlay();
+
+            // Generate log
+            const name = compartmentSpecs.find(c => c.id === id).name;
+            addLog(`DIAGNÓSTICO INICIADO: ${name}`, 'neutro');
+            Synth.playClick();
+
+            // Render sidebar panel contents
+            renderInfoPanel();
+        };
+
+        const toggleDoor = (id) => {
+            initAudio();
+            const currentlyLocked = state.doors[id];
+
+            // Trigger door flash animation in SVG
+            const flashEl = document.getElementById(`door-flash-${id}`);
+            if (flashEl) {
+                flashEl.style.animation = 'none';
+                flashEl.offsetHeight; /* trigger reflow */
+                flashEl.style.animation = 'door-flash 0.15s ease-out 2';
+            }
+
+            state.doors[id] = !currentlyLocked;
+
+            // Log update
+            const stateText = state.doors[id] ? 'FECHADA/TRANCADA' : 'ABERTA/LIVRE';
+            const logType = state.doors[id] ? 'alerta' : 'acao';
+            addLog(`SISTEMA DE SEGURANÇA: ${id} ALTERADA PARA [${stateText}]`, logType);
+
+            if (state.doors[id]) {
+                Synth.playLock();
+            } else {
+                Synth.playUnlock();
+            }
+
+            // Sync visual nodes & redraw
+            renderSVGOverlay();
+
+            // Refresh info panel if current selection contains this door
+            if (state.selectedCompartment) {
+                renderInfoPanel();
+            }
+        };
+
+        // Renders content in left HUD panel
+        const renderInfoPanel = () => {
+            const panel = document.getElementById('info-panel-content');
+            const badge = document.getElementById('comp-status-badge');
+
+            if (!state.systemUnlocked) {
+                badge.style.display = 'none';
+                if (state.breach.active) {
+                    renderBreachBoard(panel);
+                } else if (state.bypassSuccessPending) {
+                    panel.innerHTML = `
+                        <div class="breach-outcome success">
+                            <span class="outcome-title" style="color: var(--green-ok);">ACESSO PERMITIDO</span>
+                            <span class="outcome-subtitle">Bypass de firewall estabelecido. Acesso aos sensores e controles do trem liberado.</span>
+                            <button class="btn-breach" onclick="revealTrain()" style="border-color: var(--green-ok); color: var(--green-ok); font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 13px; margin-top: 10px; padding: 14px; letter-spacing: 2px; box-shadow: 0 0 8px rgba(0, 255, 136, 0.1);">INSPECIONAR DADOS DO TREM</button>
+                        </div>
+                    `;
+                } else {
+                    panel.innerHTML = `
+                        <div class="breach-container">
+                            <h2 class="comp-title" style="color: var(--amber-warn)">SISTEMA DE COMPOSIÇÃO BLOQUEADO</h2>
+                            <p class="narrative-note" style="border-color: var(--amber-warn); background: rgba(255, 170, 0, 0.05);">
+                                Um bloqueio de hardware integrado restringe a telemetria e o controle das portas deste trem. 
+                                É necessário reconfigurar o gateway de dados estabelecendo um bypass de segurança via protocolo local.
+                            </p>
+                            
+                            <div class="comp-grid" style="margin: 10px 0;">
+                                <div class="comp-label">ESTADO GERAL:</div>
+                                <div class="comp-value"><span class="badge offline">CONEXÃO RETRO-RFID INTERROMPIDA</span></div>
+                                <div class="comp-label">SEGURANÇA:</div>
+                                <div class="comp-value"><span class="badge offline">SEGURANÇA ATIVA (HELIX FIREWALL)</span></div>
+                            </div>
+                            
+                            <button class="btn-breach start-hack" onclick="startBreachMinigame()">INICIAR BYPASS DE SEGURANÇA</button>
+                        </div>
+                    `;
+                }
+                return;
+            }
+
+            if (!state.selectedCompartment) {
+                badge.style.display = 'none';
+                panel.innerHTML = `
+                    <div class="empty-panel-prompt">
+                        <div class="prompt-title">NENHUM COMPARTIMENTO SELECIONADO</div>
+                        <div class="prompt-subtitle">SELECIONE UM COMPARTIMENTO DA PLANTA DO TREM PARA EXECUTAR LEITURA DE SENSORES</div>
+                    </div>
+                `;
+                return;
+            }
+
+            const spec = getCompartmentDetails(state.selectedCompartment);
+
+            // Set header badge status
+            if (spec.status && spec.statusType) {
+                badge.className = `badge ${spec.statusType}`;
+                badge.textContent = spec.status;
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+
+            // Doors list table HTML
+            let doorsHTML = '';
+            if (spec.doors && spec.doors.length > 0) {
+                doorsHTML = `
+                    <div class="door-controls-box">
+                        <div class="door-controls-title">CONTROLE LOCAL DE PORTAS E COMPARTIMENTOS</div>
+                `;
+
+                spec.doors.forEach(doorId => {
+                    const isLocked = state.doors[doorId];
+                    const labelClass = isLocked ? 'locked' : 'unlocked';
+                    const buttonText = isLocked ? 'DESTRANCAR' : 'TRANCAR';
+                    const statusText = isLocked ? 'BLOQUEADA' : 'DESBLOQUEADA';
+                    const statusBadgeClass = isLocked ? 'offline' : 'online';
+
+                    doorsHTML += `
+                        <div class="door-control-row">
+                            <span class="door-control-name">${doorId}</span>
+                            <span class="door-control-status"><span class="badge ${statusBadgeClass}">${statusText}</span></span>
+                            <button class="btn-toggle-door ${labelClass}" onclick="toggleDoor('${doorId}')">${buttonText}</button>
+                        </div>
+                    `;
+                });
+
+                doorsHTML += `</div>`;
+            }
+
+            // Dynamic grid content rendering
+            let gridHTML = '';
+            if (spec.cameras) {
+                gridHTML += `
+                    <div class="comp-label">SISTEMA CÂMERAS:</div>
+                    <div class="comp-value"><span class="badge ${spec.camerasType}">${spec.cameras}</span></div>
+                `;
+            }
+            if (spec.dados) {
+                gridHTML += `
+                    <div class="comp-label">BARRAMENTO DADOS:</div>
+                    <div class="comp-value"><span class="badge ${spec.dadosType}">${spec.dados}</span></div>
+                `;
+            }
+            if (spec.criptografia) {
+                gridHTML += `
+                    <div class="comp-label">CRIPTOGRAFIA:</div>
+                    <div class="comp-value"><span class="badge ${spec.criptografiaType}">${spec.criptografia}</span></div>
+                `;
+            }
+            if (spec.blindagem) {
+                gridHTML += `
+                    <div class="comp-label">BLINDAGEM:</div>
+                    <div class="comp-value"><span class="badge ${spec.blindagemType}">${spec.blindagem}</span></div>
+                `;
+            }
+            if (spec.ocupantes) {
+                gridHTML += `
+                    <div class="comp-label">SENSORES BIOL:</div>
+                    <div class="comp-value">${spec.ocupantes}</div>
+                `;
+            }
+            if (spec.sistemas && spec.sistemas.length > 0) {
+                const systemsHTML = spec.sistemas.map(sys => `<span class="badge secure">${sys}</span>`).join(' ');
+                gridHTML += `
+                    <div class="comp-label">MÓDULOS ATIVOS:</div>
+                    <div class="comp-value">${systemsHTML}</div>
+                `;
+            }
+
+            const noteHTML = spec.note ? `<p class="narrative-note">${spec.note}</p>` : '';
+            const gridWrapperHTML = gridHTML ? `<div class="comp-grid">${gridHTML}</div>` : '';
+
+            panel.innerHTML = `
+                <div class="compartment-info">
+                    <h2 class="comp-title">${spec.name}</h2>
+                    ${noteHTML}
+                    ${gridWrapperHTML}
+                    ${doorsHTML}
+                </div>
+            `;
+        };
+
+
+        // ==========================================
+        // 6. CYBERPUNK BREACH PROTOCOL MINIGAME
+        // ==========================================
+
+        const hexPool = ['BD', '1C', 'E9', '55', '7A', 'FF'];
+
+        const startBreachMinigame = () => {
+            initAudio();
+            Synth.playJackIn();
+            addLog(`TENTATIVA DE BYPASS DETECTADA: ENLACE FISICO ATIVO`, 'alerta');
+
+            // Generate solvable minigame
+            state.breach.active = true;
+            state.bypassSuccessPending = false;
+            state.breach.enteredSequence = [];
+            state.breach.usedCells.clear();
+            state.breach.activeSelector = 'row';
+            state.breach.activeIdx = 0; // Row 0 is the starting line
+            state.breach.timer = 30;
+
+            // Generate 5x5 matrix
+            const matrix = [];
+            for (let r = 0; r < 5; r++) {
+                const row = [];
+                for (let c = 0; c < 5; c++) {
+                    row.push(hexPool[Math.floor(Math.random() * hexPool.length)]);
+                }
+                matrix.push(row);
+            }
+            state.breach.matrix = matrix;
+
+            // Path Solver generator to secure solvability
+            // Path: Row 0, Col C1 -> Row R1, Col C1 -> Row R1, Col C2 -> Row R2, Col C2
+            const c1 = Math.floor(Math.random() * 5);
+            const r1 = Math.floor(Math.random() * 4) + 1; // Row 1 to 4
+            let c2 = Math.floor(Math.random() * 5);
+            while (c2 === c1) c2 = Math.floor(Math.random() * 5); // avoid duplicate node
+            let r2 = Math.floor(Math.random() * 5);
+            while (r2 === r1) r2 = Math.floor(Math.random() * 5);
+
+            const code1 = matrix[0][c1];
+            const code2 = matrix[r1][c1];
+            const code3 = matrix[r1][c2];
+            const code4 = matrix[r2][c2];
+
+            // Hacking target sequence of 4 codes
+            state.breach.sequence = [code1, code2, code3, code4];
+
+            // Render board layout
+            renderInfoPanel();
+
+            // Set countdown clock timer
+            clearInterval(state.breach.timerInterval);
+            state.breach.timerInterval = setInterval(() => {
+                state.breach.timer--;
+                const timerEl = document.getElementById('breach-clock-timer');
+                if (timerEl) {
+                    timerEl.textContent = `${state.breach.timer.toString().padStart(2, '0')}s`;
+                }
+
+                if (state.breach.timer <= 0) {
+                    failBreach();
+                }
+            }, 1000);
+        };
+
+        const cancelBreach = () => {
+            clearInterval(state.breach.timerInterval);
+            state.breach.active = false;
+            Synth.playClick();
+            addLog("DECODIFICAÇÃO DE ENLACE ABORTADA.", 'neutro');
+            renderInfoPanel();
+        };
+
+        const renderBreachBoard = (container) => {
+            // Target sequence rendering
+            let targetNodesHTML = '';
+            state.breach.sequence.forEach((val, idx) => {
+                // Check if already matched
+                const isMatched = idx < state.breach.enteredSequence.length && state.breach.sequence[idx] === state.breach.enteredSequence[idx];
+                const activeCheck = idx === state.breach.enteredSequence.length ? 'active-check' : '';
+                const matchClass = isMatched ? 'matched' : '';
+                targetNodesHTML += `<span class="seq-node ${activeCheck} ${matchClass}">${val}</span>`;
+            });
+
+            // Buffer slot nodes
+            let bufferSlotsHTML = '';
+            for (let i = 0; i < state.breach.bufferSize; i++) {
+                if (i < state.breach.enteredSequence.length) {
+                    bufferSlotsHTML += `<span class="buf-node">${state.breach.enteredSequence[i]}</span>`;
+                } else {
+                    bufferSlotsHTML += `<span class="buf-node empty">_</span>`;
+                }
+            }
+
+            // Construct 5x5 matrix grid cells HTML
+            let matrixCellsHTML = '';
+            for (let r = 0; r < 5; r++) {
+                for (let c = 0; c < 5; c++) {
+                    const val = state.breach.matrix[r][c];
+                    const isUsed = state.breach.usedCells.has(`${r},${c}`);
+
+                    // Is cell currently interactive (playable) according to Breach row/col constraints?
+                    let isPlayable = false;
+                    if (!isUsed) {
+                        if (state.breach.activeSelector === 'row' && r === state.breach.activeIdx) {
+                            isPlayable = true;
+                        } else if (state.breach.activeSelector === 'col' && c === state.breach.activeIdx) {
+                            isPlayable = true;
+                        }
+                    }
+
+                    // Highlight selector grid indicators
+                    let highlightClass = '';
+                    if (state.breach.activeSelector === 'row' && r === state.breach.activeIdx) {
+                        highlightClass = 'highlight-row';
+                    } else if (state.breach.activeSelector === 'col' && c === state.breach.activeIdx) {
+                        highlightClass = 'highlight-col';
+                    }
+
+                    const playableClass = isPlayable ? 'playable' : '';
+                    const usedClass = isUsed ? 'used' : '';
+
+                    matrixCellsHTML += `
+                        <div class="matrix-cell ${highlightClass} ${playableClass} ${usedClass}" 
+                             onclick="selectMatrixCell(${r}, ${c}, ${isPlayable})">
+                            ${val}
+                        </div>
+                    `;
+                }
+            }
+
+            container.innerHTML = `
+                <div class="breach-container">
+                    <div class="breach-header">
+                        <span class="breach-title">BYPASS DE DECODIFICAÇÃO DE SEGURANÇA</span>
+                        <span class="breach-timer" id="breach-clock-timer">${state.breach.timer}s</span>
+                    </div>
+                    <p class="breach-instructions">
+                        Carregue a sequência no buffer da rede. Alterne entre linhas horizontais e colunas verticais marcadas.
+                    </p>
+
+                    <div class="breach-goals-box">
+                        <div class="breach-goal-section">
+                            <span class="breach-goal-label">MATRIZ SEC-CODE REQUERIDA:</span>
+                            <div class="sequence-display">
+                                ${targetNodesHTML}
+                            </div>
+                        </div>
+                        <div class="breach-buffer-section">
+                            <span class="breach-buffer-label">BUFFER DE DECK:</span>
+                            <div class="buffer-display">
+                                ${bufferSlotsHTML}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="breach-board-layout">
+                        <div class="matrix-container">
+                            <div class="matrix-grid">
+                                ${matrixCellsHTML}
+                            </div>
+                        </div>
+                        <div class="breach-actions">
+                            <button class="btn-breach danger" onclick="cancelBreach()">COMPROMETER LINK</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        const selectMatrixCell = (r, c, isPlayable) => {
+            if (!isPlayable) return;
+
+            initAudio();
+            Synth.playClick();
+
+            const val = state.breach.matrix[r][c];
+            state.breach.enteredSequence.push(val);
+            state.breach.usedCells.add(`${r},${c}`);
+
+            // Check if user entry has matched target sequence (continuous match check)
+            if (checkSequenceMatch()) {
+                successBreach();
+                return;
+            }
+
+            // Buffer Limit overflow check
+            if (state.breach.enteredSequence.length >= state.breach.bufferSize) {
+                failBreach();
+                return;
+            }
+
+            // Alternate targeting constraints
+            if (state.breach.activeSelector === 'row') {
+                state.breach.activeSelector = 'col';
+                state.breach.activeIdx = c; // column constraint matches click cell
+            } else {
+                state.breach.activeSelector = 'row';
+                state.breach.activeIdx = r; // row constraint matches click cell
+            }
+
+            // Redraw grid
+            renderInfoPanel();
+        };
+
+        // Helper check algorithm
+        const checkSequenceMatch = () => {
+            const seq = state.breach.sequence;
+            const entered = state.breach.enteredSequence;
+
+            if (entered.length < seq.length) return false;
+
+            // Loop through entered sequence to check for contiguous slice matching seq
+            for (let i = 0; i <= entered.length - seq.length; i++) {
+                let match = true;
+                for (let j = 0; j < seq.length; j++) {
+                    if (entered[i + j] !== seq[j]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) return true;
+            }
+            return false;
+        };
+
+        const successBreach = () => {
+            clearInterval(state.breach.timerInterval);
+            state.breach.active = false;
+            state.bypassSuccessPending = true;
+
+            // Trigger success noise
+            Synth.playSuccess();
+
+            addLog("CONECTADO INTEGRALMENTE: BYPASS CONCLUÍDO. CONTROLES DISPONÍVEIS.", 'acao');
+            addLog("ACESSO TELEMÉTRICO E CONTROLES DE PORTAS COMPILADOS COM SUCESSO.", 'neutro');
+
+            // Render visual success feedback on left HUD
+            renderInfoPanel();
+
+            // Redraw SVG layer (keeps padlock in success pending state)
+            renderSVGOverlay();
+        };
+
+        const revealTrain = () => {
+            initAudio();
+            Synth.playClick();
+            state.systemUnlocked = true;
+            state.bypassSuccessPending = false;
+
+            // Unblur background train image
+            const img = document.querySelector('.blueprint-image');
+            if (img) {
+                img.classList.remove('blurred');
+            }
+
+            // Redraw SVG layer (draws compartments and doors)
+            renderSVGOverlay();
+
+            // Reset left HUD to empty selected compartment prompt
+            renderInfoPanel();
+        };
+
+        const failBreach = () => {
+            clearInterval(state.breach.timerInterval);
+            state.breach.active = false;
+
+            // Play alarm sound and trigger warning alert log
+            Synth.playWarning();
+            addLog("CONTRA-MEDIDAS DE REDE: TENTATIVA DE BYPASS BLOQUEADA", 'erro');
+
+            // Render visual failure warning on left HUD
+            const panel = document.getElementById('info-panel-content');
+            panel.innerHTML = `
+                <div class="breach-outcome failure">
+                    <span class="outcome-title">CONEXÃO RETRO-RFID EXPIRADA</span>
+                    <span class="outcome-subtitle">A assinatura de rede expirou ou o buffer decodificou incorretamente. O sistema de bypass reiniciou.</span>
+                    <button class="btn-breach start-hack" onclick="startBreachMinigame()">TENTAR NOVAMENTE</button>
+                </div>
+            `;
+        };
+
+
+        // ==========================================
+        // 7. SYSTEM DECK INITS & BOOT LOAD SIMULATOR
+        // ==========================================
+
+        // Auto clock updater in header
+        setInterval(() => {
+            const time = new Date();
+            const timeStr = time.toTimeString().split(' ')[0];
+            ['header-clock', 'menu-header-clock', 'telemetry-header-clock'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = timeStr;
+            });
+        }, 1000);
+
+        // Terminal Boot Script
+        const bootLines = [
+            ">> SISTEMA OPERACIONAL HELIX DYNAMICS v4.1.7 PROTOCOL...",
+            ">> INICIALIZANDO LINK CRIPTOGRÁFICO COM CONECTOR RETRÔ...",
+            ">> ESTABELECENDO ACESSO DE SEGURANÇA NA LINHA CORPORATIVA... OK",
+            ">> INDEXANDO COMPARTIMENTOS DO VETOR DO VAGÃO... OK",
+            ">> DETECTANDO MÓDULO CONTROLADOR DE ENERGIA... OK",
+            ">> MAPEAÇÃO FISICA CONCLUÍDA: 4 NÓS ENCONTRADOS.",
+            ">> ANALISANDO PROTOCOLO DE PORTAS ELETRÔNICAS... [CONCLUÍDO]",
+            ">> ACESSO NÍVEL 3 LIBERADO PARA SENSOR DE REDE.",
+            ">> AGUARDANDO SINCRONIZAÇÃO DE HARDWARE AGENTE."
+        ];
+
+        let bootLineIndex = 0;
+        const bootTerminal = document.getElementById('boot-terminal');
+        const progressBar = document.getElementById('boot-progress-bar');
+        const bootStatus = document.getElementById('boot-status');
+        const jackInBtn = document.getElementById('jack-in-btn');
+        const bootScreen = document.getElementById('boot-screen');
+
+        const simulateBoot = () => {
+            if (bootLineIndex < bootLines.length) {
+                const line = document.createElement('div');
+                line.className = 'boot-terminal-line';
+                // Add green tag color for OK lines
+                if (bootLines[bootLineIndex].includes('OK') || bootLines[bootLineIndex].includes('CONCLUÍDO')) {
+                    line.className += ' success';
+                }
+                line.textContent = bootLines[bootLineIndex];
+                bootTerminal.appendChild(line);
+                bootTerminal.scrollTop = bootTerminal.scrollHeight;
+
+                bootLineIndex++;
+
+                // Progress math calculation
+                const progress = (bootLineIndex / bootLines.length) * 100;
+                progressBar.style.width = `${progress}%`;
+
+                // Set status text
+                bootStatus.textContent = `CARREGANDO COMPONENTES: ${Math.round(progress)}%`;
+
+                // Variable timeout for realism
+                const delay = 100 + Math.random() * 250;
+                setTimeout(simulateBoot, delay);
+            } else {
+                // Boot complete
+                bootStatus.textContent = "SISTEMA ONLINE — AGUARDANDO ENLACE FÍSICO";
+                jackInBtn.style.display = 'block';
+            }
+        };
+
+        // Trigger boot loop on load
+        window.addEventListener('load', () => {
+            simulateBoot();
+        });
+
+        // Jack-In connection execution
+        jackInBtn.addEventListener('click', () => {
+            initAudio();
+            Synth.playJackIn();
+
+            // Fade out boot loader
+            bootScreen.classList.add('fade-out');
+
+            // Print initial welcome diagnostics logs
+            setTimeout(() => {
+                bootScreen.classList.add('hidden');
+                addLog("CONEXÃO ESTABELECIDA COM SUCESSO.", 'neutro');
+                addLog("AGENTE LOGADO: ACESSO DE SEGURANÇA NÍVEL 3 CONCEDIDO.", 'acao');
+                addLog("CARREGANDO INTERFACE GRÁFICA OVERLAY INTERATIVA...", 'neutro');
+                addLog("INICIALIZAÇÃO COMPLETA. BYPASS DE SEGURANÇA REQUERIDO.", 'alerta');
+
+                // Navigate to main menu screen
+                showScreen('menu');
+            }, 600);
+        });
+
+    </script>
+</body>
+
+</html>
