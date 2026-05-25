@@ -2563,16 +2563,6 @@
                                     <animate attributeName="y2" from="-10" to="210" dur="1.2s" begin="0.9s" repeatCount="indefinite" />
                                 </line>
 
-                                <!-- Lateral Beacons (side signals passing by) -->
-                                <circle cx="65" cy="-20" r="3" fill="#00ff66" opacity="0.7">
-                                    <animate attributeName="cy" from="-20" to="220" dur="1.6s" begin="0.2s" repeatCount="indefinite" />
-                                    <animate attributeName="opacity" values="0;0.8;0.8;0" keyTimes="0;0.1;0.9;1" dur="1.6s" begin="0.2s" repeatCount="indefinite" />
-                                </circle>
-                                <circle cx="135" cy="-20" r="3" fill="#ffaa00" opacity="0.7">
-                                    <animate attributeName="cy" from="-20" to="220" dur="1.6s" begin="1.0s" repeatCount="indefinite" />
-                                    <animate attributeName="opacity" values="0;0.8;0.8;0" keyTimes="0;0.1;0.9;1" dur="1.6s" begin="1.0s" repeatCount="indefinite" />
-                                </circle>
-
                                 <!-- Faint concentric circles -->
                                 <circle cx="100" cy="100" r="80" stroke="#003311" stroke-width="1" fill="none" opacity="0.5" />
                                 <circle cx="100" cy="100" r="50" stroke="#003311" stroke-width="1" fill="none" opacity="0.5" />
@@ -2927,21 +2917,6 @@ DO PRESENCIAL. AÇÃO EXCLUSIVA APENAS ATRAVÉS DA [CABINE DE CONTROLE].
             if (uptimeEl) uptimeEl.textContent = formatTime(uptimeSeconds);
             if (downtimeEl) downtimeEl.textContent = formatTime(downtimeSeconds);
 
-            // Up-Time/Down-Time ticking
-            telemetryInterval = setInterval(() => {
-                uptimeSeconds++;
-                downtimeSeconds--;
-
-                if (downtimeSeconds <= 0) {
-                    downtimeSeconds = 0;
-                    stopTelemetrySystem();
-                    triggerMissionFailure();
-                }
-
-                if (uptimeEl) uptimeEl.textContent = formatTime(uptimeSeconds);
-                if (downtimeEl) downtimeEl.textContent = formatTime(downtimeSeconds);
-            }, 1000);
-
             // Speed oscillation logic
             speedInterval = setInterval(() => {
                 maglevSpeed = 418.4 + Math.random() * (421.7 - 418.4);
@@ -2956,10 +2931,6 @@ DO PRESENCIAL. AÇÃO EXCLUSIVA APENAS ATRAVÉS DA [CABINE DE CONTROLE].
         };
 
         const stopTelemetrySystem = () => {
-            if (telemetryInterval) {
-                clearInterval(telemetryInterval);
-                telemetryInterval = null;
-            }
             if (speedInterval) {
                 clearInterval(speedInterval);
                 speedInterval = null;
@@ -4085,14 +4056,43 @@ DO PRESENCIAL. AÇÃO EXCLUSIVA APENAS ATRAVÉS DA [CABINE DE CONTROLE].
         // 7. SYSTEM DECK INITS & BOOT LOAD SIMULATOR
         // ==========================================
 
-        // Auto clock updater in header
-        setInterval(() => {
-            const time = new Date();
-            const timeStr = time.toTimeString().split(' ')[0];
+        const updateHeaderClocks = () => {
+            const baseSeconds = 12 * 3600; // 12:00:00
+            const totalSeconds = baseSeconds + uptimeSeconds;
+            const h = Math.floor((totalSeconds / 3600) % 24).toString().padStart(2, '0');
+            const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+            const s = (totalSeconds % 60).toString().padStart(2, '0');
+            const timeStr = `${h}:${m}:${s}`;
+
             ['header-clock', 'menu-header-clock', 'telemetry-header-clock'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.textContent = timeStr;
             });
+        };
+
+        // Initialize immediately
+        updateHeaderClocks();
+
+        // Auto clock updater in header (starting at Midday + uptime)
+        setInterval(() => {
+            uptimeSeconds++;
+            downtimeSeconds--;
+
+            if (downtimeSeconds <= 0) {
+                downtimeSeconds = 0;
+                const failureScreen = document.getElementById('mission-failure-screen');
+                if (failureScreen && failureScreen.classList.contains('hidden')) {
+                    triggerMissionFailure();
+                }
+            }
+
+            updateHeaderClocks();
+
+            // Update telemetry screen fields if they exist
+            const uptimeEl = document.getElementById('telemetry-uptime');
+            const downtimeEl = document.getElementById('telemetry-downtime');
+            if (uptimeEl) uptimeEl.textContent = formatTime(uptimeSeconds);
+            if (downtimeEl) downtimeEl.textContent = formatTime(downtimeSeconds);
         }, 1000);
 
         // Terminal Boot Script
